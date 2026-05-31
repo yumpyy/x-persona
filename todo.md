@@ -1,0 +1,5 @@
+- [x] search for account on x for different personas. [0/3]
+    - @profiles.md
+- [x] think about how to sturcture the personas for llm to undestand it
+    - @persona-struct.md
+- [ ] write functions for interacting w x using playwright. will uses these are tools for agent
