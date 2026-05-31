@@ -295,7 +295,7 @@ wheels = [
 ]
 
 [[package]]
-name = "x-persona"
+name = "x-personas"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -311,8 +311,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "playwright", specifier = ">=1.52" },
-    { name = "pydantic", specifier = ">=2.11" },
+    { name = "playwright", specifier = ">=1.60.0" },
+    { name = "pydantic", specifier = ">=2.13.4" },
 ]
 
 [package.metadata.requires-dev]

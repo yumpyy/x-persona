@@ -1,14 +1,4 @@
-"""Edit the authenticated user's profile on X.
-
-Navigates to ``x.com/settings/profile`` and updates the specified
-fields (name, bio, location, website).  Only provided fields are
-changed; ``None`` values are skipped.
-
-Usage::
-
-    page = await bm.get_page("cneuralnetwork")
-    success = await edit_profile(page, bio="Building cool stuff 🚀")
-"""
+"""Edit the authenticated user's profile on X."""
 
 from __future__ import annotations
 
@@ -16,19 +6,21 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from utils._helpers import goto_and_wait, safe_click, safe_fill
-from utils.exceptions import XActionError, XNavigationError
-from utils.selectors import (
+from playwright.async_api import Page, BrowserContext
+
+from src.utils._helpers import goto_and_wait, safe_click, safe_fill
+from src.utils.exceptions import XNavigationError
+from src.models.post import ActionResult
+from src.utils.selectors import (
     EDIT_BIO_TEXTAREA,
     EDIT_LOCATION_INPUT,
     EDIT_NAME_INPUT,
     EDIT_SAVE_BUTTON,
     EDIT_WEBSITE_INPUT,
-    PROFILE_EDIT_BUTTON,
 )
 
 if TYPE_CHECKING:
-    from playwright.async_api import Page
+    pass
 
 logger = logging.getLogger("x_persona")
 
@@ -36,14 +28,14 @@ _PROFILE_URL = "https://x.com/settings/profile"
 
 
 async def edit_profile(
-    page: Page,
+    context_or_page: BrowserContext | Page,
     *,
     name: str | None = None,
     bio: str | None = None,
     location: str | None = None,
     website: str | None = None,
     timeout: int = 30_000,
-) -> bool:
+) -> ActionResult:
     """Update the authenticated user's profile fields.
 
     Only the fields that are explicitly passed (not ``None``) will be
@@ -51,8 +43,8 @@ async def edit_profile(
 
     Parameters
     ----------
-    page:
-        An authenticated Playwright page.
+    context_or_page:
+        An authenticated Playwright Page or BrowserContext.
     name:
         New display name.
     bio:
@@ -66,17 +58,17 @@ async def edit_profile(
 
     Returns
     -------
-    bool
-        ``True`` if the profile was saved successfully.
-
-    Raises
-    ------
-    XActionError
-        If the save fails.
+    ActionResult
+        True-compatible action result if successful.
     """
     if all(v is None for v in (name, bio, location, website)):
         logger.warning("edit_profile called with no fields to update")
-        return True
+        return ActionResult(success=True)
+
+    if isinstance(context_or_page, Page):
+        page = context_or_page
+    else:
+        page = context_or_page.pages[0] if context_or_page.pages else await context_or_page.new_page()
 
     await goto_and_wait(page, _PROFILE_URL)
     logger.info("Editing profile")
@@ -116,21 +108,19 @@ async def edit_profile(
     try:
         await safe_click(page, EDIT_SAVE_BUTTON, timeout=5_000)
     except Exception as exc:
-        raise XActionError(f"Failed to click Save: {exc}") from exc
+        err_msg = f"Failed to click Save: {exc}"
+        logger.error(err_msg)
+        return ActionResult(success=False, error=err_msg)
 
     # Wait for the save to complete — X navigates back or shows a toast
     await asyncio.sleep(3)
 
     logger.info("Profile saved successfully")
-    return True
+    return ActionResult(success=True)
 
 
 async def _fill_bio(page: Page, text: str) -> None:
-    """Fill the bio textarea, handling its special behavior.
-
-    X's bio field is a ``<textarea>`` that may need clearing before
-    filling.  We select all existing text first.
-    """
+    """Fill the bio textarea, handling its special behavior."""
     textarea = page.locator(EDIT_BIO_TEXTAREA).first
     await textarea.wait_for(state="visible", timeout=5_000)
 

@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from utils.exceptions import (
+from src.utils.exceptions import (
     XElementNotFoundError,
     XMediaUploadError,
 )
@@ -246,7 +246,7 @@ async def wait_for_toast(page: Page, *, timeout: int = 10_000) -> str:
     Useful for confirming that an action (post, like, etc.) succeeded.
     Returns empty string if no toast appears within the timeout.
     """
-    from utils.selectors import TOAST_NOTIFICATION
+    from src.utils.selectors import TOAST_NOTIFICATION
 
     try:
         toast = page.locator(TOAST_NOTIFICATION).first

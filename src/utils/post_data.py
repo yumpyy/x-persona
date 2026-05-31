@@ -1,29 +1,23 @@
-"""Hydrate a feed post into a full PostData with threaded replies.
-
-Given a :class:`~utils.models.FeedPost` (from ``get_home_feed``),
-navigates to the status page and scrapes the complete post text plus
-the full reply tree with nested chains.
-
-Usage::
-
-    feed = await get_home_feed(page)
-    full = await get_post_data(page, feed[0])
-"""
+"""Hydrate a post into a full PostData with threaded replies."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from utils._helpers import (
+from playwright.async_api import Page, BrowserContext
+
+from src.utils._helpers import (
     extract_status_id,
     extract_text,
     goto_and_wait,
     parse_count,
     scroll_page,
 )
-from utils.models import FeedPost, PostData, Reply
-from utils.selectors import (
+from src.models.feed import PostMetrics, FeedPost
+from src.models.post import PostData, Reply
+from src.utils.selectors import (
     CONVERSATION_TWEET,
     TWEET_TEXT,
     TWEET_TIMESTAMP,
@@ -31,14 +25,14 @@ from utils.selectors import (
 )
 
 if TYPE_CHECKING:
-    from playwright.async_api import Locator, Page
+    from playwright.async_api import Locator
 
 logger = logging.getLogger("x_persona")
 
 
 async def get_post_data(
-    page: Page,
-    feed_post: FeedPost,
+    context_or_page: BrowserContext | Page,
+    feed_post_or_id: FeedPost | str,
     *,
     max_reply_scrolls: int = 15,
 ) -> PostData:
@@ -46,19 +40,39 @@ async def get_post_data(
 
     Parameters
     ----------
-    page:
-        An authenticated Playwright page.
-    feed_post:
-        A lightweight ``FeedPost`` returned by ``get_home_feed``.
+    context_or_page:
+        An authenticated Playwright Page or BrowserContext.
+    feed_post_or_id:
+        A lightweight ``FeedPost`` or a numeric status ID string.
     max_reply_scrolls:
         How many times to scroll down to load more replies.
 
     Returns
     -------
     PostData
-        The complete post with full text and a nested reply tree.
+        The complete post with full text, metrics, media, and a nested reply tree.
     """
-    status_url = f"https://x.com/{feed_post.author_handle}/status/{feed_post.post_id}"
+    if isinstance(context_or_page, Page):
+        page = context_or_page
+    else:
+        page = context_or_page.pages[0] if context_or_page.pages else await context_or_page.new_page()
+
+    if isinstance(feed_post_or_id, str):
+        status_id = feed_post_or_id
+        handle = None
+        author_name = "Unknown"
+        initial_likes = 0
+        initial_reposts = 0
+        initial_replies = 0
+    else:
+        status_id = feed_post_or_id.status_id
+        handle = feed_post_or_id.handle
+        author_name = feed_post_or_id.author_name
+        initial_likes = feed_post_or_id.metrics.likes
+        initial_reposts = feed_post_or_id.metrics.retweets
+        initial_replies = feed_post_or_id.metrics.replies
+
+    status_url = _build_status_url(status_id, handle)
     await goto_and_wait(page, status_url)
     logger.info("Scraping post data: %s", status_url)
 
@@ -70,32 +84,65 @@ async def get_post_data(
     timestamp = await _extract_timestamp(main_article)
     stats = await _extract_detail_stats(page)
 
+    # Hydrate missing author info if we navigated directly by status ID
+    if author_name == "Unknown":
+        name_el = main_article.locator(TWEET_USER_NAME).first
+        if await name_el.count() > 0:
+            spans = name_el.locator("span")
+            author_name = await extract_text(spans.first)
+            
+            # Find handle
+            handle_el = name_el.locator('a[tabindex="-1"] span').first
+            if await handle_el.count() > 0:
+                handle = (await extract_text(handle_el)).replace("@", "").strip()
+            else:
+                handle = "unknown"
+
+    # --- Media URLs ---
+    media_urls: list[str] = []
+    img_els = main_article.locator('img[src*="pbs.twimg.com/media"]')
+    img_count = await img_els.count()
+    for idx in range(img_count):
+        src = await img_els.nth(idx).get_attribute("src")
+        if src:
+            media_urls.append(src)
+
     # --- Replies ---
     replies = await _collect_replies(
         page,
-        main_post_id=feed_post.post_id,
-        main_author=feed_post.author_handle,
+        main_post_id=status_id,
         max_scrolls=max_reply_scrolls,
     )
 
+    metrics = PostMetrics(
+        likes=stats.get("likes", initial_likes),
+        retweets=stats.get("reposts", initial_reposts),
+        replies=stats.get("replies", initial_replies),
+        views=stats.get("views"),
+        bookmarks=stats.get("bookmarks", 0),
+    )
+
     return PostData(
-        post_id=feed_post.post_id,
-        author_handle=feed_post.author_handle,
-        author_name=feed_post.author_name,
-        full_text=full_text,
+        status_id=status_id,
+        author_name=author_name,
+        handle=handle or "unknown",
+        text=full_text,
         timestamp=timestamp,
-        likes=stats.get("likes", feed_post.likes),
-        reposts=stats.get("reposts", feed_post.reposts),
-        replies_count=stats.get("replies", feed_post.replies_count),
-        quotes=stats.get("quotes", 0),
-        views=stats.get("views", ""),
+        metrics=metrics,
         replies=replies,
+        media_urls=media_urls,
     )
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _build_status_url(status_id: str, handle: str | None) -> str:
+    if handle:
+        return f"https://x.com/{handle.lstrip('@')}/status/{status_id}"
+    return f"https://x.com/i/status/{status_id}"
 
 
 async def _extract_post_text(article: Locator) -> str:
@@ -113,15 +160,10 @@ async def _extract_timestamp(article: Locator) -> str:
         return ""
 
 
-async def _extract_detail_stats(page: Page) -> dict[str, int | str]:
-    """Parse the detailed stat bar on the individual status page.
+async def _extract_detail_stats(page: Page) -> dict[str, int]:
+    """Parse the detailed stat bar on the individual status page."""
+    stats: dict[str, int] = {}
 
-    On the status page, X shows exact counts (not abbreviated) in an
-    aria-label or as direct text in stat links.
-    """
-    stats: dict[str, int | str] = {}
-
-    # Try to extract from the stat links below the main tweet
     stat_links = page.locator('a[href*="/likes"], a[href*="/retweets"], a[href*="/quotes"]')
     link_count = await stat_links.count()
 
@@ -144,14 +186,9 @@ async def _collect_replies(
     page: Page,
     *,
     main_post_id: str,
-    main_author: str,
     max_scrolls: int,
 ) -> list[Reply]:
-    """Scroll through the reply section and build a nested reply tree.
-
-    Replies by the same author that form a thread are chained together
-    in a nested ``replies`` list on the parent ``Reply`` object.
-    """
+    """Scroll through the reply section and build a nested reply tree."""
     seen_ids: set[str] = set()
     raw_replies: list[dict] = []
 
@@ -208,21 +245,15 @@ async def _parse_reply_article(article: Locator) -> dict | None:
 
         # Parse like/repost counts from aria-labels
         likes = 0
-        reposts = 0
         group = article.locator('[role="group"]')
         if await group.count() > 0:
             grp = group.first
-            for testid, key in [("like", "likes"), ("retweet", "reposts")]:
-                btn = grp.locator(f'[data-testid="{testid}"]')
-                if await btn.count() > 0:
-                    label = await btn.first.get_attribute("aria-label") or ""
-                    parts = label.split()
-                    if parts and parts[0].replace(",", "").isdigit():
-                        val = parse_count(parts[0])
-                        if key == "likes":
-                            likes = val
-                        else:
-                            reposts = val
+            btn = grp.locator('[data-testid="like"]')
+            if await btn.count() > 0:
+                label = await btn.first.get_attribute("aria-label") or ""
+                parts = label.split()
+                if parts and parts[0].replace(",", "").isdigit():
+                    likes = parse_count(parts[0])
 
         return {
             "reply_id": reply_id,
@@ -231,7 +262,6 @@ async def _parse_reply_article(article: Locator) -> dict | None:
             "text": text,
             "timestamp": timestamp,
             "likes": likes,
-            "reposts": reposts,
         }
     except Exception:
         logger.debug("Failed to parse reply article", exc_info=True)
@@ -239,11 +269,7 @@ async def _parse_reply_article(article: Locator) -> dict | None:
 
 
 def _build_reply_tree(raw_replies: list[dict]) -> list[Reply]:
-    """Organize flat replies into a nested tree.
-
-    Thread continuations (consecutive replies by the same author) are
-    chained as nested children.  All other replies are top-level.
-    """
+    """Organize flat replies into a nested tree."""
     if not raw_replies:
         return []
 
@@ -252,17 +278,17 @@ def _build_reply_tree(raw_replies: list[dict]) -> list[Reply]:
 
     for data in raw_replies:
         reply = Reply(
-            reply_id=data["reply_id"],
-            author_handle=data["author_handle"],
+            status_id=data["reply_id"],
+            handle=data["author_handle"],
             author_name=data["author_name"],
             text=data["text"],
             timestamp=data["timestamp"],
             likes=data["likes"],
-            reposts=data["reposts"],
+            replies=[],
         )
 
         # Chain consecutive same-author replies
-        if prev_reply and reply.author_handle == prev_reply.author_handle:
+        if prev_reply and reply.handle == prev_reply.handle:
             _append_to_chain(prev_reply, reply)
         else:
             top_level.append(reply)

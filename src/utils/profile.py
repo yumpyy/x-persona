@@ -1,13 +1,4 @@
-"""Scrape profile statistics from ``x.com/{handle}``.
-
-Returns structured :class:`~utils.models.ProfileStats` with follower
-counts, bio, location, website, and more.
-
-Usage::
-
-    page = await bm.get_page("cneuralnetwork")
-    stats = await get_profile_stats(page, "elonmusk")
-"""
+"""Scrape profile statistics from ``x.com/{handle}``."""
 
 from __future__ import annotations
 
@@ -15,10 +6,12 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from utils._helpers import extract_text, goto_and_wait, parse_count
-from utils.exceptions import XActionError, XNavigationError
-from utils.models import ProfileStats
-from utils.selectors import (
+from playwright.async_api import Page, BrowserContext
+
+from src.utils._helpers import extract_text, goto_and_wait, parse_count
+from src.utils.exceptions import XNavigationError
+from src.models.profile import ProfileStats
+from src.utils.selectors import (
     PROFILE_BIO,
     PROFILE_FOLLOWERS_LINK,
     PROFILE_FOLLOWING_LINK,
@@ -32,18 +25,21 @@ from utils.selectors import (
 )
 
 if TYPE_CHECKING:
-    from playwright.async_api import Page
+    pass
 
 logger = logging.getLogger("x_persona")
 
 
-async def get_profile_stats(page: Page, username: str) -> ProfileStats:
+async def get_profile_stats(
+    context_or_page: BrowserContext | Page,
+    username: str,
+) -> ProfileStats:
     """Scrape public profile information for *username*.
 
     Parameters
     ----------
-    page:
-        An authenticated Playwright page.
+    context_or_page:
+        An authenticated Playwright Page or BrowserContext.
     username:
         The handle (without ``@``) to look up.
 
@@ -57,6 +53,11 @@ async def get_profile_stats(page: Page, username: str) -> ProfileStats:
     XNavigationError
         If the profile page fails to load.
     """
+    if isinstance(context_or_page, Page):
+        page = context_or_page
+    else:
+        page = context_or_page.pages[0] if context_or_page.pages else await context_or_page.new_page()
+
     username = username.lstrip("@").lower()
     profile_url = f"https://x.com/{username}"
     await goto_and_wait(page, profile_url)
@@ -151,10 +152,7 @@ async def _safe_text(page: Page, selector: str) -> str:
 
 
 async def _extract_stat(page: Page, link_selector: str) -> int:
-    """Extract a numeric stat from a profile link (followers/following).
-
-    The link contains a span with the count — e.g. ``<span>1.2K</span>``.
-    """
+    """Extract a numeric stat from a profile link (followers/following)."""
     link = page.locator(link_selector).first
     try:
         await link.wait_for(state="attached", timeout=5_000)
@@ -166,16 +164,11 @@ async def _extract_stat(page: Page, link_selector: str) -> int:
 
 
 async def _extract_posts_count(page: Page, username: str) -> int:
-    """Extract the posts count from the profile navigation tab.
-
-    X shows the count in the header like "42.3K posts".
-    """
-    # Try the navigation heading which shows "{count} posts"
+    """Extract the posts count from the profile navigation tab."""
     heading = page.locator(f'[data-testid="UserProfileHeader_Items"]')
     try:
         if await heading.count() > 0:
             text = await extract_text(heading.first)
-            # Look for a pattern like "1,234 posts"
             match = re.search(r"([\d,.]+[KMB]?)\s*posts?", text, re.IGNORECASE)
             if match:
                 return parse_count(match.group(1))

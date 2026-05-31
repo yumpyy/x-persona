@@ -33,7 +33,7 @@ from playwright.async_api import (
     async_playwright,
 )
 
-from utils.exceptions import XAuthError, XNavigationError
+from src.utils.exceptions import XAuthError, XNavigationError
 
 logger = logging.getLogger("x_persona")
 

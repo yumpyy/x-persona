@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from utils import BrowserManager, get_home_feed, like
+from src.utils import BrowserManager, get_home_feed, like
 
 logging.basicConfig(
     level=logging.INFO,
