@@ -126,7 +126,11 @@ class BrowserSession:
 
     async def save_auth_state(self) -> None:
         if self._context:
-            await self._context.storage_state(path=str(self.auth_state_path))
+            try:
+                await self._context.storage_state(path=str(self.auth_state_path))
+            except Exception as e:
+                from src.agent.log import log
+                log(f"Warning: Could not save auth state (context may have already closed): {e}")
 
     async def stop(self) -> None:
         if self._context:
