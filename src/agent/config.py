@@ -7,12 +7,13 @@ from typing import Any
 def get_llm(config: dict) -> Any:
     provider = config.get("provider", "openai")
     model = config.get("model", "gpt-4o-mini")
+    temperature = config.get("temperature", 0.7)
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
         api_key = config.get("api_key") or os.getenv("OPENAI_API_KEY")
         base_url = config.get("base_url")
-        kwargs: dict[str, Any] = {"model": model}
+        kwargs: dict[str, Any] = {"model": model, "temperature": temperature}
         if api_key:
             kwargs["api_key"] = api_key
         if base_url:
@@ -22,7 +23,7 @@ def get_llm(config: dict) -> Any:
     elif provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
         api_key = config.get("api_key") or os.getenv("ANTHROPIC_API_KEY")
-        kwargs = {"model": model}
+        kwargs = {"model": model, "temperature": temperature}
         if api_key:
             kwargs["api_key"] = api_key
         return ChatAnthropic(**kwargs)
@@ -35,7 +36,7 @@ def get_llm(config: dict) -> Any:
             "DASHSCOPE_BASE_URL",
             "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         )
-        return ChatOpenAI(model=model, api_key=api_key, base_url=base_url)
+        return ChatOpenAI(model=model, api_key=api_key, base_url=base_url, temperature=temperature)
 
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")

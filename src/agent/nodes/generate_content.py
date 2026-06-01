@@ -61,7 +61,9 @@ async def generate_content(state: PersonaState, config: RunnableConfig | None = 
         except (OSError, UnicodeDecodeError) as err:
             log(f"generate_content: failed to load source sample '{sf}': {err}")
 
-    llm = get_llm(llm_config)
+    creative_config = dict(llm_config)
+    creative_config["temperature"] = 0.8  # Increase creativity and diversity for replies/quotes
+    llm = get_llm(creative_config)
     structured = llm.with_structured_output(GeneratedText)
     system_prompt = _build_system_text(sections)
 
@@ -167,7 +169,9 @@ async def generate_original_post(
     recent_posts: list[str],
 ) -> str:
     """Generate a completely new original standalone tweet conforming to the persona's content buckets, tone rules, current time of day, and recent posting history."""
-    llm = get_llm(llm_config)
+    creative_config = dict(llm_config)
+    creative_config["temperature"] = 0.85  # Higher creativity for original standalone posts
+    llm = get_llm(creative_config)
     structured = llm.with_structured_output(GeneratedText)
     system_prompt = _build_system_text(sections)
 

@@ -271,7 +271,9 @@ async def llm_decide(state: PersonaState, config: RunnableConfig | None = None) 
     log(f"llm_decide: system prompt ({len(system_prompt)} chars)")
     log(f"llm_decide: user prompt ({len(user_prompt)} chars)")
 
-    llm = get_llm(llm_config)
+    decide_config = dict(llm_config)
+    decide_config["temperature"] = 0.0  # Precise and deterministic decisions
+    llm = get_llm(decide_config)
     structured = llm.with_structured_output(EngagementDecisions)
 
     try:
