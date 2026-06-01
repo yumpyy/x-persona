@@ -304,6 +304,16 @@ def load_persona(state: PersonaState) -> dict:
 
     persona_file = state["persona_file"]
     path = Path(persona_file)
+    if not path.exists():
+        raise FileNotFoundError(f"Persona file not found: {persona_file}")
+
+    if path.stat().st_size == 0:
+        raise ValueError(
+            f"Persona file '{persona_file}' is completely empty. "
+            "Please copy the 14-section template from 'persona-struct.md' "
+            "to populate it before running the agent."
+        )
+
     lines = path.read_text(encoding="utf-8").split("\n")
 
     sections: dict = {}

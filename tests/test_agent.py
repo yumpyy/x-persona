@@ -212,6 +212,23 @@ def test_load_persona_noop():
     print(f"  \u2713 load_persona no-op: returned empty dict")
 
 
+def test_load_persona_empty_file():
+    import tempfile
+    import pytest
+    with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as f:
+        temp_name = f.name
+
+    try:
+        with pytest.raises(ValueError, match="completely empty"):
+            load_persona({
+                "persona_file": temp_name,
+                "persona_sections": {},
+            })
+        print(f"  \u2713 load_persona empty file validation: correctly raised ValueError")
+    finally:
+        os.unlink(temp_name)
+
+
 if __name__ == "__main__":
     print("Testing agent pipeline...\n")
     test_persona_parsing()
@@ -225,4 +242,5 @@ if __name__ == "__main__":
     test_action_delay()
     test_history_loading()
     test_load_persona_noop()
+    test_load_persona_empty_file()
     print("\n\u2713 All agent tests passed!")

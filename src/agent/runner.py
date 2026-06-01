@@ -29,6 +29,10 @@ async def dry_run(persona_file: str, llm_config: dict | None = None) -> None:
         print(f"Persona file not found: {persona_file}", file=sys.stderr)
         sys.exit(1)
 
+    if persona_path.stat().st_size == 0:
+        print(f"Persona file '{persona_file}' is completely empty. Please copy the 14-section template from 'persona-struct.md' before running.", file=sys.stderr)
+        sys.exit(1)
+
     print(f"\u2550\u2550\u2550 DRY RUN: {persona_path.stem} \u2550\u2550\u2550\n")
 
     from src.agent.nodes.llm_decide import llm_decide, _build_feed_text, _build_persona_text
@@ -149,6 +153,7 @@ async def run_perpetual(
     browser_path: str | None = None,
     ask: bool = False,
     no_cursor: bool = False,
+    auth_file: str | None = None,
 ) -> None:
     if headless or no_cursor:
         os.environ["DISABLE_CURSOR"] = "true"
@@ -158,16 +163,36 @@ async def run_perpetual(
         print(f"Persona file not found: {persona_file}", file=sys.stderr)
         sys.exit(1)
 
+    if persona_path.stat().st_size == 0:
+        print(f"Persona file '{persona_file}' is completely empty. Please copy the 14-section template from 'persona-struct.md' before running.", file=sys.stderr)
+        sys.exit(1)
+
     persona_name = persona_path.stem
     activity_log = f"{persona_name}-activity-log.md"
     rate_limit_file = f".rate-limits-{persona_name}.json"
     llm_config = llm_config or get_llm_config()
 
+    # Determine isolated auth state path
+    if not auth_file:
+        persona_auth = f"auth-{persona_name}.json"
+        if Path(persona_auth).exists():
+            auth_file = persona_auth
+        elif Path("auth.json").exists():
+            auth_file = "auth.json"
+        else:
+            auth_file = persona_auth
+    
+    print(f"🔒 Using browser session state file: {auth_file}")
+
     engaged_ids = list(load_engaged_status_ids(activity_log))
     if engaged_ids:
         print(f"  Found {len(engaged_ids)} previously engaged posts in activity log")
 
-    async with BrowserSession(headless=headless, executable_path=browser_path) as ctx:
+    async with BrowserSession(
+        headless=headless,
+        executable_path=browser_path,
+        auth_state_path=auth_file,
+    ) as ctx:
         home_page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await navigate_home(home_page)
         print(f"  Navigated to x.com/home (scroll_limit={scroll_limit}, headless={headless})")
@@ -363,6 +388,11 @@ def main() -> None:
         default=False,
         help="Completely disable visual cursor and click ripple overlays in headed mode",
     )
+    parser.add_argument(
+        "--auth",
+        default=None,
+        help="Path to save/load browser auth state (default: auth-<persona>.json)",
+    )
 
     args = parser.parse_args()
 
@@ -403,6 +433,7 @@ def main() -> None:
         browser_path=args.browser,
         ask=args.ask,
         no_cursor=args.no_cursor,
+        auth_file=args.auth,
     ))
 
 

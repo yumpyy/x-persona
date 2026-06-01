@@ -7,7 +7,7 @@
 │                                                            │
 │  Raw scraped posts/replies  ──►  LLM analyzes patterns ──►  │
 │  from a real X account          (tone, topics, slang,       │
-│  (e.g. purusha-persona.md)      reply style, stances)       │
+│  (e.g. mock-raw-data.md)        reply style, stances)       │
 │                                                             │
 │  Output: persona-struct.md (filled 14-section template)     │
 └────────────────────────────────────────────────────────────┘
