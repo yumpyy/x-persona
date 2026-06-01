@@ -37,7 +37,7 @@ def test_persona_parsing():
         "persona_file": persona_file, "activity_log_file": "", "llm_config": {},
         "persona_sections": {}, "source_data_files": [], "feed_posts": [],
         "feed_scroll_position": None, "scored_posts": [], "pending_actions": [],
-        "executed_actions": [], "follow_candidates": [], "follows_this_session": 0,
+        "executed_actions": [], "thread_contexts": {}, "follow_candidates": [], "follows_this_session": 0,
         "rate_limit_file": "", "cycle_action_counts": {}, "seen_post_ids": [],
         "engaged_ids": [], "scroll_count": 0, "error": None,
     })

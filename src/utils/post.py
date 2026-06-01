@@ -4,6 +4,7 @@ from playwright.async_api import BrowserContext, Page
 
 from src.models.feed import PostMetrics
 from src.models.post import ActionResult, PostData, PostResponse, Reply
+from src.utils.mouse import smooth_click
 
 
 def _parse_num(s: str) -> int:
@@ -301,7 +302,7 @@ async def like_on_page(page: Page) -> ActionResult:
     await article.wait_for(timeout=15000)
     await page.wait_for_timeout(1000)
     like_btn = article.locator('[data-testid="like"]')
-    await like_btn.click()
+    await smooth_click(page, like_btn)
     await page.wait_for_timeout(1000)
     is_liked = await article.locator('[data-testid="unlike"]').is_visible()
     return ActionResult(success=is_liked)
@@ -312,11 +313,11 @@ async def repost_on_page(page: Page) -> ActionResult:
     await article.wait_for(timeout=15000)
     await page.wait_for_timeout(1000)
     rt_btn = article.locator('[data-testid="retweet"]')
-    await rt_btn.click()
+    await smooth_click(page, rt_btn)
     await page.wait_for_timeout(1000)
     repost_option = page.locator('[data-testid="retweetConfirm"]')
     try:
-        await repost_option.click(timeout=3000)
+        await smooth_click(page, repost_option)
     except Exception:
         pass
     await page.wait_for_timeout(1000)
@@ -329,14 +330,14 @@ async def reply_on_page(page: Page, text: str) -> ActionResult:
     await article.wait_for(timeout=15000)
     await page.wait_for_timeout(1000)
     reply_btn = article.locator('[data-testid="reply"]')
-    await reply_btn.click()
+    await smooth_click(page, reply_btn)
     await page.wait_for_timeout(1000)
     textarea = page.locator('[data-testid="tweetTextarea_0"]')
     await textarea.wait_for(timeout=5000)
     await textarea.fill(text)
     await page.wait_for_timeout(500)
     submit_btn = page.locator('[data-testid="tweetButtonInline"]')
-    await submit_btn.click()
+    await smooth_click(page, submit_btn)
     await page.wait_for_timeout(2000)
     return ActionResult(success=True)
 
@@ -346,11 +347,11 @@ async def quote_on_page(page: Page, text: str) -> ActionResult:
     await article.wait_for(timeout=15000)
     await page.wait_for_timeout(1000)
     rt_btn = article.locator('[data-testid="retweet"]')
-    await rt_btn.click()
+    await smooth_click(page, rt_btn)
     await page.wait_for_timeout(1000)
     quote_option = page.get_by_role("menuitem").filter(has_text="Quote")
     try:
-        await quote_option.click(timeout=5000)
+        await smooth_click(page, quote_option)
     except Exception:
         return ActionResult(success=False, error="Quote option not found")
     await page.wait_for_timeout(1000)
@@ -359,6 +360,6 @@ async def quote_on_page(page: Page, text: str) -> ActionResult:
     await textarea.fill(text)
     await page.wait_for_timeout(500)
     submit_btn = page.locator('[data-testid="tweetButtonInline"]')
-    await submit_btn.click()
+    await smooth_click(page, submit_btn)
     await page.wait_for_timeout(2000)
     return ActionResult(success=True)

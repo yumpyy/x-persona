@@ -5,6 +5,7 @@ from typing import Any, Optional, TypedDict
 from src.models.engagement import ExecutedAction, PendingAction
 from src.models.feed import FeedPost
 from src.models.scored import ScoredPost
+from src.models.post import PostData
 
 
 class PersonaState(TypedDict):
@@ -23,6 +24,8 @@ class PersonaState(TypedDict):
     pending_actions: list[PendingAction]
     executed_actions: list[ExecutedAction]
 
+    thread_contexts: dict[str, PostData]  # Added for thread reply context
+
     follow_candidates: list[FeedPost]
     follows_this_session: int
 
@@ -34,3 +37,4 @@ class PersonaState(TypedDict):
     scroll_count: int
 
     error: Optional[str]
+

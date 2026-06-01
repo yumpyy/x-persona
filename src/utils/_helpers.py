@@ -18,6 +18,7 @@ from src.utils.exceptions import (
     XElementNotFoundError,
     XMediaUploadError,
 )
+from src.utils.mouse import smooth_click
 
 if TYPE_CHECKING:
     from playwright.async_api import ElementHandle, Locator, Page
@@ -47,7 +48,7 @@ async def safe_click(
         await element.wait_for(state="visible", timeout=timeout)
         await element.scroll_into_view_if_needed()
         await asyncio.sleep(delay_before)
-        await element.click()
+        await smooth_click(page, element)
         await asyncio.sleep(delay_after)
     except Exception as exc:
         raise XElementNotFoundError(

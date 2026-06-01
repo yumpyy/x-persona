@@ -1,7 +1,7 @@
 """X (Twitter) automation utilities for persona management."""
 
 # -- Browser session management ---------------------------------------------
-from src.utils.browser import BrowserManager
+from src.utils.browser import BrowserSession
 
 # -- Data models ------------------------------------------------------------
 from src.models import (
@@ -41,7 +41,7 @@ from src.utils.repost import repost
 
 __all__ = [
     # Browser
-    "BrowserManager",
+    "BrowserSession",
     # Models
     "PostMetrics",
     "QuotedPost",

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+from langchain_core.runnables import RunnableConfig
 
 from src.agent.config import get_llm
 from src.agent.log import log
@@ -12,11 +14,16 @@ _PROMPT_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 
 def _load_template(name: str) -> str:
-    return (_PROMPT_DIR / name).read_text(encoding="utf-8")
+    """Load a markdown template file from the prompts directory with exception handling."""
+    path = _PROMPT_DIR / name
+    if not path.is_file():
+        raise FileNotFoundError(f"Required prompt template '{name}' does not exist at: {path}")
+    return path.read_text(encoding="utf-8")
 
 
-def _build_persona_text(sections: dict) -> str:
-    blocks = []
+def _build_persona_text(sections: dict[str, Any]) -> str:
+    """Compile sections of a structured persona profile into a markdown string for prompt injection."""
+    blocks: list[str] = []
 
     sec1 = sections.get("1", {})
     if isinstance(sec1, str) and sec1.strip():
@@ -28,7 +35,7 @@ def _build_persona_text(sections: dict) -> str:
 
     ling = sections.get("2", {})
     if isinstance(ling, dict):
-        parts = []
+        parts: list[str] = []
         if ling.get("vocabulary"):
             words = [f"- {v.get('word','')}: {v.get('meaning','')} ({v.get('context','')})" for v in ling["vocabulary"]]
             parts.append("Vocabulary:\n" + "\n".join(words))
@@ -149,8 +156,9 @@ def _build_persona_text(sections: dict) -> str:
     return "\n\n".join(blocks)
 
 
-def _build_feed_text(posts: list) -> str:
-    lines = []
+def _build_feed_text(posts: list[Any]) -> str:
+    """Render structured feed posts list into a descriptive text context for LLM decision ingestion."""
+    lines: list[str] = []
     for i, p in enumerate(posts, 1):
         lines.append(f"Post {i}:")
         lines.append(f"  Author: @{p.handle or 'unknown'}")
@@ -178,6 +186,7 @@ def _decisions_to_pending(
     decisions: list[PostDecision],
     state_rate_limit_file: str,
 ) -> tuple[list[PendingAction], dict[str, int]]:
+    """Convert raw LLM decisions into pending actions queue while enforcing local rate limits and caps."""
     rl = RateLimitState(state_rate_limit_file)
     caps = cycle_caps()
     cycle_counts: dict[str, int] = {}
@@ -224,7 +233,12 @@ def _decisions_to_pending(
     return pending, cycle_counts
 
 
-async def llm_decide(state: PersonaState, config=None) -> dict:
+async def llm_decide(state: PersonaState, config: RunnableConfig | None = None) -> dict[str, Any]:
+    """Execute LLM decision engine to decide which feed posts are worth engaging.
+
+    Analyzes full persona profile rules, extracts post parameters, compiles multimodal
+    image blocks inside the payload for live visual reasoning, and returns structured PostDecisions.
+    """
     sections = state.get("persona_sections", {})
     posts = state.get("feed_posts", [])
     engaged_ids = set(state.get("engaged_ids", []))
@@ -236,16 +250,20 @@ async def llm_decide(state: PersonaState, config=None) -> dict:
 
     new_posts = [p for p in posts if p.status_id not in engaged_ids]
     if not new_posts:
-        log("llm_decide: all posts already engaged")
+        log("llm_decide: all feed posts already engaged")
         return {"pending_actions": [], "cycle_action_counts": {}, "_routing_target": "log_activity"}
 
-    log(f"llm_decide: evaluating {len(new_posts)} posts via LLM")
+    log(f"llm_decide: evaluating {len(new_posts)} post(s) via LLM")
 
     persona_text = _build_persona_text(sections)
     feed_text = _build_feed_text(new_posts)
 
-    system_template = _load_template("llm_decide_system.md")
-    user_template = _load_template("llm_decide_user.md")
+    try:
+        system_template = _load_template("llm_decide_system.md")
+        user_template = _load_template("llm_decide_user.md")
+    except FileNotFoundError as err:
+        log(f"llm_decide: Critical prompt error: {err}")
+        return {"pending_actions": [], "cycle_action_counts": {}, "_routing_target": "log_activity"}
 
     system_prompt = system_template.replace("{persona_sections}", persona_text)
     user_prompt = user_template.replace("{feed_posts}", feed_text)
@@ -257,13 +275,28 @@ async def llm_decide(state: PersonaState, config=None) -> dict:
     structured = llm.with_structured_output(EngagementDecisions)
 
     try:
+        user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
+        
+        # Append up to 4 image URLs to give visual context to the decision engine
+        image_count = 0
+        for p in new_posts:
+            if p.media_urls:
+                for url in p.media_urls:
+                    if image_count >= 4:
+                        break
+                    user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": url}
+                    })
+                    image_count += 1
+
         result: EngagementDecisions = structured.invoke([
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": user_content},
         ])
         decisions = result.decisions
         decisions = [d for d in decisions if d.target_handle]
-        log(f"llm_decide: LLM returned {len(decisions)} decisions")
+        log(f"llm_decide: LLM returned {len(decisions)} decision(s)")
         for d in decisions:
             actions = [a for a in d.action_type if a.lower() in ("like", "reply", "quote")]
             if actions:
@@ -271,7 +304,7 @@ async def llm_decide(state: PersonaState, config=None) -> dict:
             else:
                 log(f"  (ignored) @{d.target_handle:<20} score={d.score:.1f} reason=\"{d.reason[:60]}\"")
     except Exception as e:
-        log(f"llm_decide: LLM call failed: {e}")
+        log(f"llm_decide: LLM invocation failed: {e}")
         return {"pending_actions": [], "cycle_action_counts": {}, "_routing_target": "log_activity"}
 
     if not decisions:
@@ -281,7 +314,7 @@ async def llm_decide(state: PersonaState, config=None) -> dict:
     pending, cycle_counts = _decisions_to_pending(decisions, state.get("rate_limit_file", ""))
 
     if not pending:
-        log("llm_decide: no actions after rate limit enforcement")
+        log("llm_decide: no pending actions remaining after rate limit enforcement")
         return {"pending_actions": [], "cycle_action_counts": cycle_counts, "_routing_target": "log_activity"}
 
     has_text = any(a.action_type in (ActionType.REPLY, ActionType.QUOTE) for a in pending)
@@ -290,7 +323,7 @@ async def llm_decide(state: PersonaState, config=None) -> dict:
     else:
         target = "execute_actions"
 
-    log(f"llm_decide: {len(pending)} actions across {len({a.target_handle for a in pending})} posts -> {target}")
+    log(f"llm_decide: {len(pending)} action(s) across {len({a.target_handle for a in pending})} post(s) -> {target}")
     for a in pending:
         log(f"  llm_decide: [{a.action_type.value:>6}] @{a.target_handle:<20} id={a.target_status_id} score={a.score:.1f}")
 
