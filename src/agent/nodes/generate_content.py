@@ -158,3 +158,48 @@ async def generate_content(state: PersonaState, config: RunnableConfig | None = 
         "pending_actions": filtered_pending,
         "_routing_target": "execute_actions",
     }
+
+
+async def generate_original_post(
+    sections: dict[str, Any],
+    llm_config: dict[str, Any],
+    time_of_day: str,
+    recent_posts: list[str],
+) -> str:
+    """Generate a completely new original standalone tweet conforming to the persona's content buckets, tone rules, current time of day, and recent posting history."""
+    llm = get_llm(llm_config)
+    structured = llm.with_structured_output(GeneratedText)
+    system_prompt = _build_system_text(sections)
+
+    buckets = sections.get("4", {})
+    buckets_text = ""
+    if isinstance(buckets, dict):
+        buckets_text = "\n".join(f"- {k}: {v}" for k, v in buckets.items())
+
+    recent_text = ""
+    if recent_posts:
+        recent_list = "\n".join(f"- \"{p}\"" for p in recent_posts)
+        recent_text = f"\nYour recent original posts:\n{recent_list}\n"
+
+    user_prompt = (
+        f"The current time of day is: {time_of_day}.\n"
+        "Draft a brand new original standalone tweet in your voice.\n"
+        "It must not be a reply or a quote. It must be a new post representing one of your content buckets:\n"
+        f"{buckets_text}\n"
+        f"{recent_text}\n"
+        "GUIDELINES FOR TIME-OF-DAY, DIVERSITY, AND CONTINUITY:\n"
+        "- If it is Morning: Talk about waking up early, going for a run (e.g., a 2km run), weather, how you feel waking early, or gym beginner progress.\n"
+        "- If it is Afternoon/Evening: Talk about daytime engineering topics: FPGAs, microcontrollers, low-level coding, category theory, abstract algebra, classic programming books, or deadpan OOP/Java slander.\n"
+        "- If it is Late Night: Talk about late-night coding, fatigue, category theory math, pulling all-nighters, or sleeping.\n"
+        "- CONTINUITY: Read your recent original posts above. If you recently posted about a classic book you are reading (e.g., SICP or K&R C), today you should post about an interesting fact from the book, what you learned today, how much you completed, or your progress.\n"
+        "- DIVERSITY: Choose a topic/bucket that is DIFFERENT from your most recent post to keep your feed interesting and cover all aspects of your life (fitness, books, category theory, hardware).\n"
+        "- FITNESS SPECIFIC: If posting about the gym or running, write honest, beginner updates. Include the philosophy that doing a little bit (e.g., 15 minutes of workout) is far better than doing nothing at all.\n\n"
+        "Follow your persona's profile exactly — match vocabulary, casing, punctuation, and emoji/slang rules.\n"
+        "Keep it extremely minimal, quiet, direct, and short (under 140 characters). Do not write any explanations, just the tweet text."
+    )
+
+    result = await structured.ainvoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ])
+    return result.text.strip()

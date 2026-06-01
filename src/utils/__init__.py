@@ -31,13 +31,9 @@ from src.utils.exceptions import (
 # -- Tool functions ----------------------------------------------------------
 from src.utils.edit_profile import edit_profile
 from src.utils.feed import get_home_feed
-from src.utils.like import like
-from src.utils.post import post
+from src.utils.post import post, reply, quote, like, repost
 from src.utils.post_data import get_post_data
 from src.utils.profile import get_profile_stats
-from src.utils.quote import quote
-from src.utils.reply import reply
-from src.utils.repost import repost
 
 __all__ = [
     # Browser

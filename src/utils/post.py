@@ -191,7 +191,7 @@ async def post(context: BrowserContext, text: str) -> PostResponse:
         # Type character-by-character naturally to emulate human keystroke profiles
         import random
         for char in text:
-            await page.keyboard.write(char)
+            await page.keyboard.type(char)
             await asyncio.sleep(random.uniform(0.015, 0.045))
         await page.wait_for_timeout(1000)
 
@@ -258,16 +258,29 @@ async def reply(context: BrowserContext, status_id: str, text: str) -> ActionRes
     await page.wait_for_timeout(1000)
 
     reply_btn = article.locator('[data-testid="reply"]')
-    await reply_btn.click()
+    await smooth_click(page, reply_btn)
     await page.wait_for_timeout(1000)
 
-    textarea = page.locator('[data-testid="tweetTextarea_0"]')
-    await textarea.wait_for(timeout=5000)
-    await textarea.fill(text)
+    textarea = page.locator('[data-testid^="tweetTextarea_"]').filter(visible=True).first
+    if not await textarea.is_visible():
+        textarea = page.locator('div[role="textbox"]').filter(visible=True).first
+        
+    await textarea.wait_for(state="visible", timeout=15000)
+    await smooth_click(page, textarea)
     await page.wait_for_timeout(500)
 
-    submit_btn = page.locator('[data-testid="tweetButtonInline"]')
-    await submit_btn.click()
+    import random
+    import asyncio
+    for char in text:
+        await page.keyboard.type(char)
+        await asyncio.sleep(random.uniform(0.01, 0.035))
+    await page.wait_for_timeout(1000)
+
+    submit_btn = page.locator('[data-testid="tweetButton"]').filter(visible=True).first
+    if not await submit_btn.is_visible():
+        submit_btn = page.locator('[data-testid="tweetButtonInline"]').filter(visible=True).first
+        
+    await smooth_click(page, submit_btn)
     await page.wait_for_timeout(2000)
 
     return ActionResult(success=True)
@@ -281,24 +294,36 @@ async def quote(context: BrowserContext, status_id: str, text: str) -> ActionRes
     await page.wait_for_timeout(1000)
 
     rt_btn = article.locator('[data-testid="retweet"]')
-    await rt_btn.click()
+    await smooth_click(page, rt_btn)
     await page.wait_for_timeout(1000)
 
     quote_option = page.get_by_role("menuitem").filter(has_text="Quote")
     try:
-        await quote_option.click(timeout=5000)
+        await smooth_click(page, quote_option)
     except Exception:
         return ActionResult(success=False, error="Quote option not found")
-
     await page.wait_for_timeout(1000)
 
-    textarea = page.locator('[data-testid="tweetTextarea_0"]')
-    await textarea.wait_for(timeout=5000)
-    await textarea.fill(text)
+    textarea = page.locator('[data-testid^="tweetTextarea_"]').filter(visible=True).first
+    if not await textarea.is_visible():
+        textarea = page.locator('div[role="textbox"]').filter(visible=True).first
+        
+    await textarea.wait_for(state="visible", timeout=15000)
+    await smooth_click(page, textarea)
     await page.wait_for_timeout(500)
 
-    submit_btn = page.locator('[data-testid="tweetButtonInline"]')
-    await submit_btn.click()
+    import random
+    import asyncio
+    for char in text:
+        await page.keyboard.type(char)
+        await asyncio.sleep(random.uniform(0.01, 0.035))
+    await page.wait_for_timeout(1000)
+
+    submit_btn = page.locator('[data-testid="tweetButton"]').filter(visible=True).first
+    if not await submit_btn.is_visible():
+        submit_btn = page.locator('[data-testid="tweetButtonInline"]').filter(visible=True).first
+        
+    await smooth_click(page, submit_btn)
     await page.wait_for_timeout(2000)
 
     return ActionResult(success=True)
@@ -348,14 +373,30 @@ async def reply_on_page(page: Page, text: str) -> ActionResult:
     article = page.locator('article[data-testid="tweet"]').first
     await article.wait_for(timeout=15000)
     await page.wait_for_timeout(1000)
+    
     reply_btn = article.locator('[data-testid="reply"]')
     await smooth_click(page, reply_btn)
     await page.wait_for_timeout(1000)
-    textarea = page.locator('[data-testid="tweetTextarea_0"]')
-    await textarea.wait_for(timeout=5000)
-    await textarea.fill(text)
+    
+    textarea = page.locator('[data-testid^="tweetTextarea_"]').filter(visible=True).first
+    if not await textarea.is_visible():
+        textarea = page.locator('div[role="textbox"]').filter(visible=True).first
+        
+    await textarea.wait_for(state="visible", timeout=15000)
+    await smooth_click(page, textarea)
     await page.wait_for_timeout(500)
-    submit_btn = page.locator('[data-testid="tweetButtonInline"]')
+    
+    import random
+    import asyncio
+    for char in text:
+        await page.keyboard.type(char)
+        await asyncio.sleep(random.uniform(0.01, 0.035))
+    await page.wait_for_timeout(1000)
+    
+    submit_btn = page.locator('[data-testid="tweetButton"]').filter(visible=True).first
+    if not await submit_btn.is_visible():
+        submit_btn = page.locator('[data-testid="tweetButtonInline"]').filter(visible=True).first
+        
     await smooth_click(page, submit_btn)
     await page.wait_for_timeout(2000)
     return ActionResult(success=True)
@@ -365,20 +406,37 @@ async def quote_on_page(page: Page, text: str) -> ActionResult:
     article = page.locator('article[data-testid="tweet"]').first
     await article.wait_for(timeout=15000)
     await page.wait_for_timeout(1000)
+    
     rt_btn = article.locator('[data-testid="retweet"]')
     await smooth_click(page, rt_btn)
     await page.wait_for_timeout(1000)
+    
     quote_option = page.get_by_role("menuitem").filter(has_text="Quote")
     try:
         await smooth_click(page, quote_option)
     except Exception:
         return ActionResult(success=False, error="Quote option not found")
     await page.wait_for_timeout(1000)
-    textarea = page.locator('[data-testid="tweetTextarea_0"]')
-    await textarea.wait_for(timeout=5000)
-    await textarea.fill(text)
+    
+    textarea = page.locator('[data-testid^="tweetTextarea_"]').filter(visible=True).first
+    if not await textarea.is_visible():
+        textarea = page.locator('div[role="textbox"]').filter(visible=True).first
+        
+    await textarea.wait_for(state="visible", timeout=15000)
+    await smooth_click(page, textarea)
     await page.wait_for_timeout(500)
-    submit_btn = page.locator('[data-testid="tweetButtonInline"]')
+    
+    import random
+    import asyncio
+    for char in text:
+        await page.keyboard.type(char)
+        await asyncio.sleep(random.uniform(0.01, 0.035))
+    await page.wait_for_timeout(1000)
+    
+    submit_btn = page.locator('[data-testid="tweetButton"]').filter(visible=True).first
+    if not await submit_btn.is_visible():
+        submit_btn = page.locator('[data-testid="tweetButtonInline"]').filter(visible=True).first
+        
     await smooth_click(page, submit_btn)
     await page.wait_for_timeout(2000)
     return ActionResult(success=True)

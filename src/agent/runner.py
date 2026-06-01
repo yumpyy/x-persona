@@ -154,6 +154,7 @@ async def run_perpetual(
     ask: bool = False,
     no_cursor: bool = False,
     auth_file: str | None = None,
+    once: bool = False,
 ) -> None:
     if headless or no_cursor:
         os.environ["DISABLE_CURSOR"] = "true"
@@ -271,6 +272,10 @@ async def run_perpetual(
             "scroll_count": 0,
         }
 
+        session_engagements = 0
+        target_original_post_count = random.randint(10, 20)
+        print(f"🎲 [Original Post Scheduler] Target engagements for next original tweet: {target_original_post_count}")
+
         cycle = 0
         while True:
             cycle += 1
@@ -283,6 +288,69 @@ async def run_perpetual(
             pending = result.get("pending_actions", [])
             executed = result.get("executed_actions", [])
             log(f"cycle {cycle}: scrolls={sc} new_posts={len(new_posts)} pending={len(pending)} executed={len(executed)}")
+
+            successful_engagements = [a for a in executed if a.success]
+            if successful_engagements:
+                session_engagements += len(successful_engagements)
+                print(f"📈 [Original Post Scheduler] Session engagements: {session_engagements}/{target_original_post_count}")
+
+            if session_engagements >= target_original_post_count:
+                print("\n📝 [Original Post Scheduler] Triggered! Composing a brand new original post...")
+                try:
+                    from src.agent.nodes.generate_content import generate_original_post
+                    from src.utils.post import post
+                    from src.agent.history import load_recent_original_posts
+                    from datetime import datetime, timezone
+
+                    # Resolve time of day
+                    hour = datetime.now().hour
+                    if 5 <= hour < 12:
+                        time_of_day = "Morning"
+                    elif 12 <= hour < 20:
+                        time_of_day = "Afternoon/Evening"
+                    else:
+                        time_of_day = "Late Night"
+
+                    # Load recent original posts
+                    recent_posts = load_recent_original_posts(activity_log, limit=5)
+                    print(f"📖 Loaded {len(recent_posts)} recent original posts from memory")
+
+                    tweet_text = await generate_original_post(
+                        state["persona_sections"],
+                        llm_config,
+                        time_of_day,
+                        recent_posts
+                    )
+                    print(f"✨ [Original Post Scheduler] Generated text ({time_of_day}): \"{tweet_text}\"")
+
+                    if ask:
+                        ans = input("Confirm publishing original post? [Y/n]: ").strip().lower()
+                        if ans and ans != "y":
+                            print("❌ Skipped original post publication.")
+                            tweet_text = ""
+
+                    if tweet_text:
+                        print("🚀 Publishing original post key-by-key...")
+                        resp = await post(ctx, tweet_text)
+                        if resp.success:
+                            print("✅ Original post successfully published!")
+                            # Manually append to the activity log table so we have memory of it!
+                            ts_str = datetime.now(timezone.utc).isoformat()
+                            entry = f"| {ts_str} | original_post | self | {tweet_text} | 10.0 | Standalone original tweet published [{time_of_day}]. |"
+                            with open(activity_log, "a", encoding="utf-8") as f:
+                                f.write(entry + "\n")
+                        else:
+                            print(f"❌ Failed to publish original post: {resp.error}")
+                except Exception as ex:
+                    print(f"⚠️ Error in original post scheduler: {ex}")
+
+                session_engagements = 0
+                target_original_post_count = random.randint(10, 20)
+                print(f"🎲 Next original post target set to: {target_original_post_count} engagements\n")
+
+            if once:
+                print("\n  [Once] Cycle completed. Exiting as requested by --once.")
+                break
 
             if scroll_limit > 0 and sc >= scroll_limit:
                 break_duration = random.randint(600, 1800)
@@ -302,7 +370,7 @@ async def run_perpetual(
 async def run_once(
     persona_file: str,
     headless: bool = True,
-    scroll_limit: int = 1,
+    scroll_limit: int = 2500,
     llm_config: dict | None = None,
     browser_path: str | None = None,
 ) -> None:
@@ -312,6 +380,7 @@ async def run_once(
         scroll_limit=scroll_limit,
         llm_config=llm_config,
         browser_path=browser_path,
+        once=True,
     )
 
 
@@ -421,19 +490,16 @@ def main() -> None:
         asyncio.run(dry_run(args.persona, llm_config=llm_config))
         return
 
-    limit = args.scroll_limit
-    if args.once:
-        limit = 1
-
     asyncio.run(run_perpetual(
         persona_file=args.persona,
         headless=not args.visible,
-        scroll_limit=limit,
+        scroll_limit=args.scroll_limit,
         llm_config=llm_config,
         browser_path=args.browser,
         ask=args.ask,
         no_cursor=args.no_cursor,
         auth_file=args.auth,
+        once=args.once,
     ))
 
 

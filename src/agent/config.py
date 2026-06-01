@@ -58,7 +58,18 @@ def get_llm_config(
         cfg["base_url"] = base_url
 
     if "provider" not in cfg:
-        cfg["provider"] = "openai"
+        dashscope_key = os.getenv("DASHSCOPE_API_KEY", "")
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        
+        has_dashscope = dashscope_key and not dashscope_key.startswith("your_")
+        has_openai = openai_key and not openai_key.startswith("your_")
+        
+        if has_dashscope and not has_openai:
+            cfg["provider"] = "dashscope"
+        elif os.getenv("ANTHROPIC_API_KEY") and not os.getenv("ANTHROPIC_API_KEY", "").startswith("your_") and not has_openai:
+            cfg["provider"] = "anthropic"
+        else:
+            cfg["provider"] = "openai"
     if "model" not in cfg:
         env_key = {
             "openai": "OPENAI_MODEL",

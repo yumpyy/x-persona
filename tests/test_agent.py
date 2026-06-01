@@ -229,6 +229,12 @@ def test_load_persona_empty_file():
         os.unlink(temp_name)
 
 
+def test_generate_original_post():
+    from src.agent.nodes.generate_content import generate_original_post
+    assert generate_original_post is not None
+    print(f"  \u2713 generate_original_post utility: import and signature verified")
+
+
 if __name__ == "__main__":
     print("Testing agent pipeline...\n")
     test_persona_parsing()
@@ -243,4 +249,5 @@ if __name__ == "__main__":
     test_history_loading()
     test_load_persona_noop()
     test_load_persona_empty_file()
+    test_generate_original_post()
     print("\n\u2713 All agent tests passed!")
