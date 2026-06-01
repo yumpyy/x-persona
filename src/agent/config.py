@@ -60,10 +60,17 @@ def get_llm_config(
     if "provider" not in cfg:
         cfg["provider"] = "openai"
     if "model" not in cfg:
-        cfg["model"] = os.getenv(
-            {None: "", "openai": "OPENAI_MODEL", "anthropic": "ANTHROPIC_MODEL", "dashscope": "DASHSCOPE_MODEL"}.get(
-                cfg.get("provider"), ""
-            )
-        ) or "gpt-4o-mini"
+        env_key = {
+            "openai": "OPENAI_MODEL",
+            "anthropic": "ANTHROPIC_MODEL",
+            "dashscope": "DASHSCOPE_MODEL"
+        }.get(cfg.get("provider"), "")
+        cfg["model"] = os.getenv(env_key, "") if env_key else ""
+        if not cfg["model"]:
+            cfg["model"] = {
+                "openai": "gpt-4o-mini",
+                "anthropic": "claude-3-5-sonnet-latest",
+                "dashscope": "qwen-vl-max"
+            }.get(cfg.get("provider"), "gpt-4o-mini")
 
     return cfg

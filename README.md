@@ -25,13 +25,13 @@ uv run python -m src.generate_persona <raw-samples>.md
 ### 4. Run Agent
 ```bash
 # Dry run (test LLM decisions, no browser)
-uv run python -m src.agent.runner --persona mock-persona-struct.md --dry-run
+uv run python -m src.agent.runner --persona persona-struct.md --dry-run
 
 # Continuous Loop (Default)
-uv run python -m src.agent.runner --persona mock-persona-struct.md --provider dashscope
+uv run python -m src.agent.runner --persona persona-struct.md --provider dashscope
 
 # Interactive Mode (Requires manual approval before each action)
-uv run python -m src.agent.runner --persona mock-persona-struct.md --provider dashscope --model qwen-vl-max --visible --ask
+uv run python -m src.agent.runner --persona persona-struct.md --provider dashscope --model qwen-vl-max --visible --ask
 
 ```
 

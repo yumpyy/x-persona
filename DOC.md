@@ -2,272 +2,193 @@
 
 ## Overview
 
-X Personas is an AI agent system that creates and runs realistic social media personas on X (Twitter). It uses LangGraph to orchestrate a workflow where an agent:
+X Personas is an AI agent system designed to run realistic, autonomous personas on X (Twitter). Built on LangGraph, the system orchestrates a clean, cycle-by-cycle workflow:
 
-1. Loads a structured persona definition (who they are, how they talk, what they care about)
-2. Scrapes the X home feed to see what's happening
-3. Scores each post using a deterministic decision engine based on the persona's preferences
-4. Decides engagement actions — like, reply, quote tweet, or repost
-5. Generates reply/quote text using an LLM that matches the persona's linguistic profile exactly
-6. Executes actions via Playwright browser automation
-7. Logs all activity to a per-persona activity log
-
-The goal is to make bots that don't look or feel like bots — they post with authentic voice, engage meaningfully, and build real-feeling presence over time.
+1. **Load Persona**: Parses a structured identity profile (`persona-struct.md`) containing traits, writing samples, topic preferences, and interaction boundaries.
+2. **Scroll & Parse Feed**: Navigates the home timeline via Playwright and extracts all currently visible posts.
+3. **Decide Engagement (LLM)**: An LLM evaluates the persona profile against visible posts, outputting structured actions (like, reply, quote, repost, or ignore) with specific scores and justifications.
+4. **Hydrate Conversations**: If reply or quote actions are scheduled, Playwright fetches parent/sibling context in a background tab to ensure correct conversational flow.
+5. **Generate Response Content**: A separate, focused LLM call writes reply or quote text matching the persona's vocabulary, emoji habits, and linguistic quirks (including writing style and slang samples).
+6. **Execute Actions**: Playwright performs the actions on X. Actions for the same post are batched and executed within a single dedicated tab to optimize speed and security.
+7. **Log Activity**: Every action is saved locally in a markdown-formatted activity log.
+8. **Follow Decisions**: Periodically evaluates encountered accounts against follow guidelines.
 
 ---
 
 ## Project Structure
 
 ```
-x-personas/
-├── personam-struct.md            # Standard template for defining personas
-├── agent_pln.md                  # LangGraph agent architecture plan
-├── playwright-function.md        # Spec for Playwright automation functions
-├── profiles.md                   # X profile URLs being studied as references
-├── ref-persona.md                # A filled-out example persona (vaibhav)
-├── cneural-net-persona.md        # Sample persona source data — raw posts & replies
-├── purusha-persona.md            # Sample persona source data — raw posts & replies
-├── learning-map.md               # Learning resources
-├── main.py                       # CLI entry point
-├── pyproject.toml                # Python project config (pydantic, playwright)
+x-persona/
+├── persona-struct.md             # Standard markdown template for defining personas
+├── README.md                     # Project quickstart and CLI guide
+├── DOC.md                        # Technical documentation
+├── pyproject.toml                # Project configurations and dependencies
+├── uv.lock                       # Lockfile mapping exact dependencies
 ├── src/
-│   ├── __init__.py
+│   ├── generate_persona.py       # Helper to generate filled-out persona-struct.md from raw post logs
 │   ├── models/                   # Pydantic data models
 │   │   ├── __init__.py
-│   │   ├── feed.py               # FeedPost, PostMetrics, QuotedPost, FeedResponse
-│   │   └── post.py              # Reply (recursive), PostData, ActionResult, PostResponse
-│   └── utils/                   # Playwright browser automation
+│   │   ├── engagement.py         # EngagementDecisions, PostDecision schema
+│   │   ├── feed.py               # FeedPost, PostMetrics, QuotedPost, FeedResponse schema
+│   │   ├── log.py                # ActivityLogEntry schema
+│   │   └── post.py               # Action results and status responses
+│   ├── agent/                    # LangGraph workflow orchestration
+│   │   ├── __init__.py
+│   │   ├── runner.py             # Perpetual loop CLI runner with rate-limit and break management
+│   │   ├── graph.py              # LangGraph StateGraph topology
+│   │   ├── state.py              # LangGraph State model (TypedDict)
+│   │   ├── config.py             # LLM client factory (OpenAI, Anthropic, DashScope)
+│   │   ├── rate_limiter.py       # Actions-per-cycle, hourly, and daily limits
+│   │   ├── history.py            # Deduplication & engagement logs parser
+│   │   └── nodes/                # LangGraph Node implementations
+│   │       ├── load_persona.py
+│   │       ├── fetch_feed.py     # Captures viewport feed details
+│   │       ├── llm_decide.py     # Decision-making node using structured LLM output
+│   │       ├── hydrate_replies.py
+│   │       ├── generate_content.py
+│   │       ├── execute_actions.py
+│   │       ├── log_activity.py
+│   │       ├── follow_decision.py
+│   │       ├── state_cleansing.py
+│   │       └── scroll_page.py
+│   └── utils/                    # Core browser automation functions
 │       ├── __init__.py
-│       ├── browser.py            # BrowserSession — shared browser lifecycle
-│       ├── feed.py              # get_home_feed()
-│       └── post.py              # get_post_data(), post(), like(), repost()
+│       ├── browser.py            # Playwright session and context isolation manager
+│       ├── feed.py               # Home feed parsing and navigation helpers
+│       ├── selectors.py          # Centralized DOM selector constants
+│       ├── mouse.py              # Humanized cursor physics
+│       ├── post.py               # Action executors (likes, reposts)
+│       ├── reply.py              # Reply composition executor
+│       └── quote.py              # Quote tweet composition executor
+└── tests/                        # Automated unit and integration test suites
 ```
 
 ---
 
-## Key Concepts
+## Architecture & Workflow
 
-### Persona Definition (`persona-struct.md`)
+The agent runs as a LangGraph `StateGraph` where each perpetual cycle handles scrolling, evaluation, composition, and execution sequentially.
 
-A persona is defined across 14 sections in a markdown template:
-
-| Section | What it captures |
-|---|---|
-| 1. Identity & Metadata | Handle, display name, bio, occupation, follower counts |
-| 2. Linguistic Profile | Languages, code-mixing, slang, emoji habits, grammar quirks |
-| 3. Personality & Vibe | Core traits, humor style, hard "never" rules |
-| 4. Content Buckets | Types of content they post, with frequency and examples |
-| 5. Posting Behavior | Post length, media habits, thread frequency, repost behavior |
-| 6. Reply Behavior | Context-dependent reply length matrix, escalation triggers |
-| 7. Engagement Triggers | Topics, accounts, and formats that make them stop scrolling |
-| 8. Topic Stances | Specific opinions on subjects, with intensity |
-| 9. Decision Engine | Scoring formula, thresholds, engagement type matrix, follow logic |
-| 10. Reference Accounts | Accounts they admire or borrow from |
-| 11. Current Context | What they're building, learning, experiencing |
-| 12. Tone Rules | Constraints for all generated content |
-| 13. Source Data & History | Raw post/reply data files referenced by the LLM |
-| 14. Activity Log | Per-persona activity log schema |
-
-### Persona Source Data
-
-Files like `cneural-net-persona.md` and `purusha-persona.md` contain raw posts and replies scraped from real X profiles. They are organized with `<posts>` and `<replies>` tags. These serve as reference material for the LLM to understand the persona's authentic language, interaction patterns, and relationship dynamics.
-
-### Decision Engine
-
-The core of the engagement logic. Each home feed post is scored using:
+### LangGraph Cycle Topology
 
 ```
-score = (topic_affinity × 0.4) + (account_relationship × 0.3) + (format_affinity × 0.2) + (recency_bonus × 0.1)
+             ┌────────────────┐
+             │  load_persona  │
+             └───────┬────────┘
+                     ▼
+             ┌────────────────┐
+             │  scroll_feed   │  (Parse visible posts in viewport)
+             └───────┬────────┘
+                     ▼
+             ┌────────────────┐
+             │   llm_decide   │  (LLM decides actions via structured output)
+             └───────┬────────┘
+                     │
+         ┌───────────┴───────────┐  (Conditional Route)
+         ▼                       ▼
+ ┌──────────────┐        ┌──────────────┐
+ │ hydrate_repl │        │   execute    │ (Liking-only actions bypass
+ │     _context │        │   _actions   │  composition)
+ └───────┬──────┘        └───────┬──────┘
+         ▼                       │
+ ┌──────────────┐                │
+ │   generate   │                │
+ │   _content   │                │
+ └───────┬──────┘                │
+         ▼                       │
+ ┌──────────────┐                │
+ │   execute    │◄───────────────┘
+ │   _actions   │
+ └───────┬──────┘
+         ▼
+ ┌──────────────┐
+ │ log_activity │  (Persist to <persona>-activity-log.md)
+ └───────┬──────┘
+         ▼
+ ┌────────────────┐
+ │follow_decision │  (Evaluate encountered profiles for follows)
+ └───────┬────────┘
+         ▼
+ ┌────────────────┐
+ │state_cleansing │  (Flush cycle state, preserve seen & engaged post IDs)
+ └───────┬────────┘
+         ▼
+ ┌────────────────┐
+ │  scroll_page   │  (Smooth human-like scrolling to fresh viewport)
+ └────────────────┘
 ```
 
-Scoring is deterministic — implemented in Python code. No LLM calls for scoring.
+---
 
-| Score | Action |
-|---|---|
-| 8-10 | Quote tweet + like |
-| 6-7.9 | Reply + like |
-| 4-5.9 | Like only |
-| 2-3.9 | Scroll past, maybe read |
-| 0-1.9 | Ignore |
+## Core Technical Systems
+
+### 1. Structured LLM Decision Node (`llm_decide.py`)
+Rather than relying on fragile manual parsing or brittle regex patterns, the decision node executes a structured function call utilizing the LLM provider's `.with_structured_output()` interface. 
+* **Input**: Persona specifications (Identity, Topics, Stances, Thresholds) coupled with visible feed posts (Text, Author handle, Recency).
+* **Target Schema**: `EngagementDecisions` which holds a list of `PostDecision` objects:
+  - `action_type`: A list of actions (e.g. `["like", "reply"]` or `["like", "quote"]`).
+  - `score`: The logical priority score (0.0 to 10.0).
+  - `reason`: Structured textual explanation mapping back to the persona's stances.
+  - `target_status_id`: Unique post ID.
+
+### 2. Conversational Context Hydration (`hydrate_replies.py`)
+To prevent flat or irrelevant responses, when a reply or quote is decided, the agent opens the targeted status details page in a parallel context. It parses the parent post and parent-replies to provide the generation node with rich conversational history.
+
+### 3. Humanized Playwright Automation (`execute_actions.py`)
+* **Tab-per-Post**: To prevent page corruption and minimize session footprint, each engagement opens a separate background tab, runs all decided actions for that specific post (e.g., likes, then writes reply), and safely closes the tab.
+* **Natural Delays**: Randomized action delays (3–8s) and scroll delays (5–15s) avoid automated traffic detection.
+* **Cursor Simulation & RIpples**: Heading runs overlay a visible cursor in the DOM displaying natural cubic-Bézier paths and click ripples to aid human visual debugging.
+
+### 4. Robust Rate Limiting (`rate_limiter.py`)
+Actions are strictly checked and persisted to a local state file `.rate-limits-<persona>.json` to ensure limits are respected even across sudden agent restarts:
+* **Likes**: Max 5/cycle, 20/hour, 80/day
+* **Replies**: Max 2/cycle, 8/hour, 30/day
+* **Reposts**: Max 2/cycle, 8/hour, 30/day
+* **Quotes**: Max 1/cycle, 4/hour, 15/day
+* **Follows**: Max 3/hour, 15/day
 
 ---
 
-## Architecture
+## Verification & Safe Execution
 
-### Agent Workflow (LangGraph Graph Design)
+### Operator Approval Gate (`--ask`)
+By running with the `--ask` CLI flag, you enable the interactive approval gate. The workflow halts before executing any browser-level writes:
+* Displays a detailed summary: targeted post, score, rationale, and proposed response.
+* Prompts the operator to:
+  - `Y`/`y`: Approve and execute the action block.
+  - `N`/`n`: Terminate and skip the action block entirely.
+  - `S`/`s`: Skip composition while executing safe read-actions like likes.
 
-```
-[load_persona] 
-      ↓
-[scroll_feed] (Parses and logs page states)
-      ↓
-[llm_decide] (Evaluates profile rules + visible feed posts)
-      │
-      ├───────────────────────┬────────────────────────┐
-      ↓                       ↓                        ↓
-[hydrate_replies]     [execute_actions]          [log_activity]
-      ↓                       │ (Gateway: --ask)       │ (Appends metrics)
-[generate_content]            ↓                        ↓
-      ↓                 [log_activity]           [follow_decision]
-[execute_actions]             ↓                        ↓
-      │                 [follow_decision]        [state_cleansing]
-      ↓                       ↓                        ↓
-[log_activity]          [state_cleansing]         [scroll_page] (Smooth scroll)
-      ↓                       ↓                        ↓
-[follow_decision]         [scroll_page]               END
-      ↓                       ↓
-[state_cleansing]            END
-      ↓
-[scroll_page]
-      ↓
-     END
-```
-
-### Nodes
-
-| Node | Description |
-|---|---|
-| `load_persona` | Reads and parses the persona markdown into structured data memory. |
-| `scroll_feed` | Scrapes x.com/home via Playwright for current posts, logging page transitions. |
-| `llm_decide` | LLM processes feed posts against the persona profile and selects engagements. |
-| `hydrate_replies` | Playwright scrapes thread ancestors to provide conversational thread context. |
-| `generate_content` | Dedicated LLM composition utilizing writing samples for exact tone. |
-| `execute_actions` | Playwright executes likes, replies, and quotes (supports interactive approvals). |
-| `log_activity` | Records action metrics into the `<persona>-activity-log.md` table on disk. |
-| `follow_decision` | Scores and follows new developer accounts matching stances. |
-| `state_cleansing` | Cleans temporary routing properties from the LangGraph state. |
-| `scroll_page` | Executes smooth scroll intervals to transition to the next visible posts. |
-
----
-
-## Additional Agent Utilities
-
-### 1. Page Recognition Engine
-A state recognition helper, `detect_current_page(page: Page) -> str`, is used during the navigation and tab lifecycle. The agent logs the state on page loads:
-* **Home Feed** (`x.com/home`)
-* **Tweet Details** (`x.com/<user>/status/<id>`)
-* **Profile Pages** (`x.com/<user>`)
-* **Notifications, Messages, Settings, Search, and Compose dialogs.**
-
-### 2. Startup Account Auto-Sync Scraper
-To keep the loaded persona aligned with real-world account metrics (followers, following, display name, bio), a startup scraper runs after authentication:
-1. Detects the logged-in handle from sidebar navigation or account switcher elements.
-2. Navigates to `x.com/<handle>` to parse profile metadata (updating the `identity & metadata` table in `<persona>-struct.md` on disk).
-3. Loads the metadata into memory so subsequent LLM cycles use correct user statistics.
-4. Returns the browser context back to the home timeline.
-
-### 3. Cursor Simulation Overlay
-* **Easing:** Simulates cursor movement using cubic Bézier curves.
-* **Visual Overlay:** In headed runs, renders a cursor pointer overlay in the DOM. Clicking triggers a scale animation and indicator waves.
-* **Stealth Bypass:** Skips visual overlays in headless mode (`DISABLE_CURSOR="true"`). Operates via `--no-cursor` in headed mode.
-
-### 4. Operator Approval Gate (`--ask`)
-Blocks the automated execution sequence. It summarizes pending interaction groups (author, target status, proposed text, and LLM logical reasoning score) and prompts the operator to approve (`Y`/`y`), reject (`N`/`n`), or skip (`S`/`s`) before touching the webpage.
-
-### Models (Pydantic)
-
-| File | Models |
-|---|---|
-| `feed.py` | PostMetrics, QuotedPost, FeedPost, FeedResponse |
-| `post.py` | Reply (recursive), PostData, ActionResult, PostResponse |
-| `scored.py` *(planned)* | ScoreBreakdown, ScoredPost |
-| `engagement.py` *(planned)* | ActionType, PendingAction, ExecutedAction |
-| `log.py` *(planned)* | ActivityLogEntry, ActivityLog |
-
-### Utils (Playwright)
-
-| File | Functions |
-|---|---|
-| `browser.py` | BrowserSession — start/stop/save_auth, context manager |
-| `feed.py` | get_home_feed() — scrape home feed |
-| `post.py` | get_post_data(), post(), like(), repost() |
-
----
-
-## How It Works Step by Step
-
-1. **Define a persona** — Fill out persona-struct.md for the target profile. Reference raw post/reply data in section 13.
-
-2. **Run the agent** — Point the runner at the persona file:
-   ```
-   python -m src.agent.runner --persona cneural-net-persona.md --headless
-   ```
-
-3. **Agent loads persona** — Parses the markdown into structured sections. The linguistic profile, engagement triggers, topic stances, and scoring weights become the agent's "identity."
-
-4. **Agent fetches feed** — Uses Playwright to log into X and scrape the home feed. Each post becomes a FeedPost model.
-
-5. **Agent scores posts** — The scoring engine computes a score for each post using the formula from the persona struct. Topic keywords, account relationship lookup, post format detection, and recency all contribute.
-
-6. **Agent decides engagement** — Posts above thresholds get queued as actions. The engagement type matrix (section 9g) determines whether to reply, quote, like, or repost based on context.
-
-7. **LLM generates content** — For reply/quote actions, an LLM call generates text that matches the persona's linguistic profile exactly — code-mixing ratio, slang, emoji patterns, sentence length, all from the persona definition.
-
-8. **Agent executes actions** — Playwright clicks the like/repost/reply/quote buttons on X.
-
-9. **Agent logs everything** — Every action is recorded in `<persona>-activity-log.md` with timestamp, action type, target, content, score, and reason.
-
-10. **Agent considers follows** — New accounts in the feed are scored using the follow criteria. High-scoring accounts get followed (respecting rate limits).
-
----
-
-## Profiles Being Studied
-
-From `profiles.md`:
-
-| Handle | Handle |
-|---|---|
-| @cneuralnetwork | cneural-net-persona.md |
-| @maharshii | — |
-| @purusa0x6c | purusha-persona.md |
-| @sharpeye_wnl | — |
-
----
-
-## Running the Agent
-
-### Prerequisites
-
-- Python 3.12+
-- Playwright installed (`playwright install chromium`)
-- A logged-in X account (auth state saved to `auth.json`)
-
-### Commands
-
+### Dry-Run Verification (`--dry-run`)
+To verify LLM alignment without spinning up any automated browser sessions, you can run:
 ```bash
-# One cycle
-python -m src.agent.runner --persona cneural-net-persona.md
-
-# Continuous loop (check feed every 30 minutes)
-python -m src.agent.runner --persona cneural-net-persona.md --loop --interval 1800
-
-# With a different LLM provider
-python -m src.agent.runner --persona ref-persona.md --provider anthropic --model claude-sonnet-4-20250514
-
-# Visible browser (for debugging)
-python -m src.agent.runner --persona ref-persona.md --no-headless
+uv run python -m src.agent.runner --persona persona-struct.md --dry-run
 ```
+This feeds a set of mock posts representing different topics (tech, random posts, personal milestones) to the decision prompt and showcases how the LLM structures its actions, scores, and explanations in the terminal.
 
 ---
 
-## Dependencies
+## Setting Up and Running
 
-- `pydantic>=2.13.4` — Data models with strict validation
-- `playwright>=1.60.0` — Browser automation for X
-- `langgraph` — Agent orchestration
-- `langchain-openai` or `langchain-anthropic` — LLM integration
+### 1. Prerequisites
+* Python 3.12+
+* An authenticated X session state. Save your cookies and local storage state into `auth.json` at the root directory of the project.
 
----
+### 2. Configuration Setup
+Copy the environment template and insert your API keys:
+```bash
+cp .env.example .env
+```
+Fill in the appropriate API keys for your preferred LLM provider (DashScope/Qwen, OpenAI, or Anthropic/Claude).
 
-## Related Files
+### 3. Run Commands
+```bash
+# Verify parsing and LLM choices using dummy data
+uv run python -m src.agent.runner --persona persona-struct.md --dry-run
 
-| File | Purpose |
-|---|---|
-| `persona-struct.md` | Standard persona template |
-| `playwright-function.md` | Playwright function specification |
-| `agent_pln.md` | Agent architecture plan |
-| `profiles.md` | Real X profiles being studied |
-| `ref-persona.md` | Filled-out example persona |
-| `cneural-net-persona.md` | Sample source data |
-| `purusha-persona.md` | Sample source data |
-| `todo.md` | Project task tracking |
+# Run headed with manual approval gate (recommended for initial setup)
+uv run python -m src.agent.runner --persona persona-struct.md --visible --ask
+
+# Run completely headless and autonomous
+uv run python -m src.agent.runner --persona persona-struct.md
+```

@@ -28,6 +28,7 @@ auth_state.json
 # Environment
 .env
 .env.*
+!.env.example
 
 # OS
 .DS_Store
@@ -38,3 +39,26 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Local X Personas Activity Logs, Rate limits, and Scratch files
+*-activity-log.md
+.rate-limits-*.json
+scratch/
+*_personality.md
+
+# Custom persona structures & raw scrapings (preserve the template file)
+*-struct.md
+*-persona.md
+!persona-struct.md
+
+# Scraped raw profile lists, playbooks & todos
+profiles.md
+playwright-function.md
+todo.md
+
+# HTML & Test Scraps
+page-home-timeliene.html
+posts.html
+test_like_third_post.py
+test_playwright.py
+
