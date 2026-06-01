@@ -1,6 +1,6 @@
 import re
 
-from playwright.async_api import BrowserContext
+from playwright.async_api import BrowserContext, Page
 
 from src.models.feed import FeedPost, FeedResponse, PostMetrics, QuotedPost
 
@@ -162,3 +162,14 @@ async def _parse_article(article) -> FeedPost | None:
         media_urls=media_urls,
         author_avatar_url=avatar_url,
     )
+
+
+async def navigate_home(page: Page) -> None:
+    await page.goto("https://x.com/home", wait_until="domcontentloaded")
+    await page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
+
+
+async def scroll_down(page: Page, times: int = 1) -> None:
+    for _ in range(times):
+        await page.evaluate("window.scrollBy({ top: window.innerHeight, behavior: 'smooth' })")
+        await page.wait_for_timeout(1000)
