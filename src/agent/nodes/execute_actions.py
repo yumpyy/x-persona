@@ -52,6 +52,33 @@ async def execute_actions(state: PersonaState, config=None) -> dict:
         labels = [a.action_type.value for a in actions]
         log(f"execute: {', '.join(labels)} @{handle} id={status_id}")
 
+        ask_mode = configurable.get("ask", False)
+        if ask_mode:
+            print(f"\n📢 PENDING ENGAGEMENT FOR @{handle} (Post ID: {status_id}):")
+            for a in actions:
+                content_str = f" with text: \"{a.content}\"" if a.content else ""
+                print(f"   👉 [{a.action_type.value.upper()}] {content_str}")
+                print(f"      Reason: {a.reason}")
+            
+            choice = ""
+            while choice not in ("y", "n", "s"):
+                choice = input("\nExecute this engagement group? [Y/n/s] (Yes / No / Skip): ").strip().lower()
+                if choice == "":
+                    choice = "y"
+                elif choice not in ("y", "n", "s"):
+                    print("Please enter 'y' (yes), 'n' (no/reject), or 's' (skip).")
+            
+            if choice in ("n", "s"):
+                log(f"execute: USER REJECTED/SKIPPED actions for @{handle} id={status_id}")
+                for action in actions:
+                    executed.append(ExecutedAction(
+                        action=action,
+                        success=False,
+                        error="User rejected / skipped action in interactive mode",
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    ))
+                continue
+
         page = None
         try:
             page = await open_post_tab(ctx, status_id)

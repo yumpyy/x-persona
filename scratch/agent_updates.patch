@@ -1,0 +1,292 @@
+diff --git a/src/agent/nodes/execute_actions.py b/src/agent/nodes/execute_actions.py
+index 90f7b7a..d8aa0a7 100644
+--- a/src/agent/nodes/execute_actions.py
++++ b/src/agent/nodes/execute_actions.py
+@@ -52,6 +52,33 @@ async def execute_actions(state: PersonaState, config=None) -> dict:
+         labels = [a.action_type.value for a in actions]
+         log(f"execute: {', '.join(labels)} @{handle} id={status_id}")
+ 
++        ask_mode = configurable.get("ask", False)
++        if ask_mode:
++            print(f"\n📢 PENDING ENGAGEMENT FOR @{handle} (Post ID: {status_id}):")
++            for a in actions:
++                content_str = f" with text: \"{a.content}\"" if a.content else ""
++                print(f"   👉 [{a.action_type.value.upper()}] {content_str}")
++                print(f"      Reason: {a.reason}")
++            
++            choice = ""
++            while choice not in ("y", "n", "s"):
++                choice = input("\nExecute this engagement group? [Y/n/s] (Yes / No / Skip): ").strip().lower()
++                if choice == "":
++                    choice = "y"
++                elif choice not in ("y", "n", "s"):
++                    print("Please enter 'y' (yes), 'n' (no/reject), or 's' (skip).")
++            
++            if choice in ("n", "s"):
++                log(f"execute: USER REJECTED/SKIPPED actions for @{handle} id={status_id}")
++                for action in actions:
++                    executed.append(ExecutedAction(
++                        action=action,
++                        success=False,
++                        error="User rejected / skipped action in interactive mode",
++                        timestamp=datetime.now(timezone.utc).isoformat(),
++                    ))
++                continue
++
+         page = None
+         try:
+             page = await open_post_tab(ctx, status_id)
+diff --git a/src/agent/runner.py b/src/agent/runner.py
+index 82cf8b9..445b9d1 100644
+--- a/src/agent/runner.py
++++ b/src/agent/runner.py
+@@ -23,7 +23,7 @@ from src.utils.feed import navigate_home
+ load_dotenv()
+ 
+ 
+-async def dry_run(persona_file: str) -> None:
++async def dry_run(persona_file: str, llm_config: dict | None = None) -> None:
+     persona_path = Path(persona_file)
+     if not persona_path.exists():
+         print(f"Persona file not found: {persona_file}", file=sys.stderr)
+@@ -33,7 +33,8 @@ async def dry_run(persona_file: str) -> None:
+ 
+     from src.agent.nodes.llm_decide import llm_decide, _build_feed_text, _build_persona_text
+ 
+-    llm_config = get_llm_config()
++    if llm_config is None:
++        llm_config = get_llm_config()
+     state = load_persona({
+         "persona_file": str(persona_path),
+         "activity_log_file": "",
+@@ -146,7 +147,12 @@ async def run_perpetual(
+     scroll_limit: int = 2500,
+     llm_config: dict | None = None,
+     browser_path: str | None = None,
++    ask: bool = False,
++    no_cursor: bool = False,
+ ) -> None:
++    if headless or no_cursor:
++        os.environ["DISABLE_CURSOR"] = "true"
++
+     persona_path = Path(persona_file)
+     if not persona_path.exists():
+         print(f"Persona file not found: {persona_file}", file=sys.stderr)
+@@ -173,6 +179,7 @@ async def run_perpetual(
+                 "browser_context": ctx,
+                 "home_page": home_page,
+                 "llm_config": llm_config,
++                "ask": ask,
+             }
+         }
+ 
+@@ -292,6 +299,18 @@ def main() -> None:
+         default=None,
+         help="Path to Chromium binary (default: Playwright-managed browser)",
+     )
++    parser.add_argument(
++        "--ask",
++        action="store_true",
++        default=False,
++        help="Ask for confirmation before executing any action (approval mode)",
++    )
++    parser.add_argument(
++        "--no-cursor",
++        action="store_true",
++        default=False,
++        help="Completely disable visual cursor and click ripple overlays in headed mode",
++    )
+ 
+     args = parser.parse_args()
+ 
+@@ -317,7 +336,7 @@ def main() -> None:
+     )
+ 
+     if args.dry_run:
+-        asyncio.run(dry_run(args.persona))
++        asyncio.run(dry_run(args.persona, llm_config=llm_config))
+         return
+ 
+     limit = args.scroll_limit
+@@ -330,6 +349,8 @@ def main() -> None:
+         scroll_limit=limit,
+         llm_config=llm_config,
+         browser_path=args.browser,
++        ask=args.ask,
++        no_cursor=args.no_cursor,
+     ))
+ 
+ 
+diff --git a/src/utils/browser.py b/src/utils/browser.py
+index 024cb2e..51179db 100644
+--- a/src/utils/browser.py
++++ b/src/utils/browser.py
+@@ -66,18 +66,23 @@ class BrowserSession:
+             "--disable-blink-features=AutomationControlled",
+             "--force-device-scale-factor=1",
+         ]
++        if not self.headless:
++            launch_args.append("--start-maximized")
+ 
+         context_kwargs: dict = dict(
+             user_agent=self.user_agent,
+             locale=self.locale,
+-            viewport=self.viewport,
+             color_scheme="light",
+             reduced_motion="no-preference",
+             permissions=["clipboard-read", "clipboard-write"],
+-            device_scale_factor=1,
+             is_mobile=False,
+             has_touch=False,
+         )
++        if self.headless:
++            context_kwargs["viewport"] = self.viewport
++            context_kwargs["device_scale_factor"] = 1
++        else:
++            context_kwargs["no_viewport"] = True
+ 
+         if self.timezone_id:
+             context_kwargs["timezone_id"] = self.timezone_id
+diff --git a/src/utils/feed.py b/src/utils/feed.py
+index 6221905..9b3d077 100644
+--- a/src/utils/feed.py
++++ b/src/utils/feed.py
+@@ -166,7 +166,43 @@ async def _parse_article(article) -> FeedPost | None:
+ 
+ async def navigate_home(page: Page) -> None:
+     await page.goto("https://x.com/home", wait_until="domcontentloaded")
+-    await page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
++    
++    # Fast path: check if tweets load within 5 seconds initially
++    try:
++        await page.wait_for_selector('article[data-testid="tweet"]', timeout=5000)
++        return
++    except Exception:
++        pass
++
++    # Timeline failed to load within 5 seconds (could be logged out, slow network, or landing page redirect)
++    print("\n" + "!" * 80)
++    print("⚠️  X TIMELINE LOAD TIMEOUT (COULD BE LOGGED OUT OR SLOW NETWORK)")
++    print("👉 If you are logged out, please log in manually in the visible headed browser window.")
++    print("👉 The agent will automatically resume once the timeline is loaded successfully.")
++    print("!" * 80 + "\n")
++
++    # Poll for the timeline to load for up to 120 seconds
++    max_poll_seconds = 120
++    for sec in range(1, max_poll_seconds + 1):
++        if page.is_closed():
++            raise RuntimeError("Browser tab was closed during login waiting.")
++
++        # Check if timeline tweets are now visible
++        if await page.locator('article[data-testid="tweet"]').first.is_visible():
++            print("\n✅ Session successfully authenticated and loaded! Resuming agent loops...")
++            try:
++                await page.context.storage_state(path="auth.json")
++                print("💾 Saved new authenticated session cookies to auth.json")
++            except Exception as save_err:
++                print(f"⚠️  Could not save auth.json state: {save_err}")
++            return
++
++        if sec % 10 == 0:
++            print(f"⏱️  Still waiting for timeline to load... ({sec}/{max_poll_seconds}s passed)")
++
++        await page.wait_for_timeout(1000)
++
++    raise TimeoutError("Failed to load timeline or authenticate session within 120 seconds.")
+ 
+ 
+ async def scroll_down(page: Page, times: int = 1) -> None:
+diff --git a/src/utils/mouse.py b/src/utils/mouse.py
+index ecaa5ff..f31bcc2 100644
+--- a/src/utils/mouse.py
++++ b/src/utils/mouse.py
+@@ -12,6 +12,7 @@ from __future__ import annotations
+ import asyncio
+ import logging
+ import math
++import os
+ import random
+ from typing import Any
+ 
+@@ -29,6 +30,8 @@ async def ensure_cursor_overlay(page: Page) -> None:
+     Ensures the cursor is visible in headed showcases and is automatically
+     re-injected if the DOM reloads or is modified.
+     """
++    if os.getenv("DISABLE_CURSOR") == "true":
++        return
+     try:
+         if page.is_closed():
+             return
+@@ -77,6 +80,8 @@ async def trigger_click_effect(page: Page) -> None:
+ 
+     Gives a highly polished visual indicator in headed recordings.
+     """
++    if os.getenv("DISABLE_CURSOR") == "true":
++        return
+     try:
+         if page.is_closed():
+             return
+diff --git a/src/utils/post.py b/src/utils/post.py
+index 8c4f13c..f8b54df 100644
+--- a/src/utils/post.py
++++ b/src/utils/post.py
+@@ -172,28 +172,42 @@ async def _parse_reply_article(article) -> Reply | None:
+ 
+ 
+ async def post(context: BrowserContext, text: str) -> PostResponse:
+-    page = context.pages[0] if context.pages else await context.new_page()
+-
+-    await page.goto("https://x.com/compose/post", wait_until="domcontentloaded")
+-    await page.wait_for_selector('[data-testid="tweetTextarea_0"]', timeout=15000)
+-
+-    textarea = page.locator('[data-testid="tweetTextarea_0"]')
+-    await textarea.fill(text)
+-    await page.wait_for_timeout(500)
+-
+-    submit_btn = page.locator('[data-testid="tweetButtonInline"]')
+-    await submit_btn.click()
++    """Compose and publish a completely new original post (tweet) on X/Twitter.
+ 
++    Uses smooth visual mouse movements and high-fidelity clicking.
++    """
++    page = context.pages[0] if context.pages else await context.new_page()
+     try:
+-        await page.wait_for_url("**/status/**", timeout=10000)
+-        current_url = page.url
+-        status_match = re.search(r"/status/(\d+)", current_url)
+-        status_id = status_match.group(1) if status_match else None
++        await page.goto("https://x.com/compose/post", wait_until="domcontentloaded")
++        
++        textarea = page.locator('[data-testid="tweetTextarea_0"]').first
++        await textarea.wait_for(state="visible", timeout=15000)
++        await page.wait_for_timeout(1000)
++
++        # Smooth glide cursor and click compose area
++        await smooth_click(page, textarea)
++        await page.wait_for_timeout(500)
++
++        # Type character-by-character naturally to emulate human keystroke profiles
++        import random
++        for char in text:
++            await page.keyboard.write(char)
++            await asyncio.sleep(random.uniform(0.015, 0.045))
++        await page.wait_for_timeout(1000)
++
++        # Locate the submit button (on compose dialog it is typically tweetButton, fallback to tweetButtonInline)
++        submit_btn = page.locator('[data-testid="tweetButton"]').first
++        if not await submit_btn.is_visible():
++            submit_btn = page.locator('[data-testid="tweetButtonInline"]').first
++
++        # Smooth glide cursor to click submit
++        await smooth_click(page, submit_btn)
++        await page.wait_for_timeout(3000)
+ 
+         return PostResponse(
+             success=True,
+-            url=current_url,
+-            status_id=status_id,
++            url=page.url,
++            status_id=None,
+         )
+     except Exception as e:
+         return PostResponse(success=False, error=str(e))

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import random
 from typing import Any
 
@@ -29,6 +30,8 @@ async def ensure_cursor_overlay(page: Page) -> None:
     Ensures the cursor is visible in headed showcases and is automatically
     re-injected if the DOM reloads or is modified.
     """
+    if os.getenv("DISABLE_CURSOR") == "true":
+        return
     try:
         if page.is_closed():
             return
@@ -77,6 +80,8 @@ async def trigger_click_effect(page: Page) -> None:
 
     Gives a highly polished visual indicator in headed recordings.
     """
+    if os.getenv("DISABLE_CURSOR") == "true":
+        return
     try:
         if page.is_closed():
             return

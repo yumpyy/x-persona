@@ -94,39 +94,75 @@ Scoring is deterministic — implemented in Python code. No LLM calls for scorin
 
 ## Architecture
 
-### Agent Workflow (LangGraph)
+### Agent Workflow (LangGraph Graph Design)
 
 ```
-persona-struct.md → [load_persona] → [fetch_feed] → [score_posts]
-                                                         ↓
-                                                  [decide_engagement]
-                                                         │
-                                          ┌──────────────┼──────────────┐
-                                          ↓              ↓              ↓
-                                   [generate      [execute       (skip to
-                                   _content] →   _actions]     log_activity]
-                                          ↓              ↓
-                                          └──────────────┘
-                                                         ↓
-                                                  [log_activity]
-                                                         ↓
-                                                  [follow_decision]
-                                                         ↓
-                                                        END
+[load_persona] 
+      ↓
+[scroll_feed] (Parses and logs page states)
+      ↓
+[llm_decide] (Evaluates profile rules + visible feed posts)
+      │
+      ├───────────────────────┬────────────────────────┐
+      ↓                       ↓                        ↓
+[hydrate_replies]     [execute_actions]          [log_activity]
+      ↓                       │ (Gateway: --ask)       │ (Appends metrics)
+[generate_content]            ↓                        ↓
+      ↓                 [log_activity]           [follow_decision]
+[execute_actions]             ↓                        ↓
+      │                 [follow_decision]        [state_cleansing]
+      ↓                       ↓                        ↓
+[log_activity]          [state_cleansing]         [scroll_page] (Smooth scroll)
+      ↓                       ↓                        ↓
+[follow_decision]         [scroll_page]               END
+      ↓                       ↓
+[state_cleansing]            END
+      ↓
+[scroll_page]
+      ↓
+     END
 ```
 
 ### Nodes
 
 | Node | Description |
 |---|---|
-| `load_persona` | Reads and parses the persona markdown into structured data |
-| `fetch_feed` | Scrapes x.com/home via Playwright for current posts |
-| `score_posts` | Applies scoring formula to each post deterministically |
-| `decide_engagement` | Applies thresholds + engagement type matrix, queues actions |
-| `generate_content` | LLM generates reply/quote text matching persona's voice |
-| `execute_actions` | Playwright executes queued actions (like, repost, quote, reply) |
-| `log_activity` | Appends actions to `<persona>-activity-log.md` |
-| `follow_decision` | Scores accounts and optionally follows new ones |
+| `load_persona` | Reads and parses the persona markdown into structured data memory. |
+| `scroll_feed` | Scrapes x.com/home via Playwright for current posts, logging page transitions. |
+| `llm_decide` | LLM processes feed posts against the persona profile and selects engagements. |
+| `hydrate_replies` | Playwright scrapes thread ancestors to provide conversational thread context. |
+| `generate_content` | Dedicated LLM composition utilizing writing samples for exact tone. |
+| `execute_actions` | Playwright executes likes, replies, and quotes (supports interactive approvals). |
+| `log_activity` | Records action metrics into the `<persona>-activity-log.md` table on disk. |
+| `follow_decision` | Scores and follows new developer accounts matching stances. |
+| `state_cleansing` | Cleans temporary routing properties from the LangGraph state. |
+| `scroll_page` | Executes smooth scroll intervals to transition to the next visible posts. |
+
+---
+
+## Additional Agent Utilities
+
+### 1. Page Recognition Engine
+A state recognition helper, `detect_current_page(page: Page) -> str`, is used during the navigation and tab lifecycle. The agent logs the state on page loads:
+* **Home Feed** (`x.com/home`)
+* **Tweet Details** (`x.com/<user>/status/<id>`)
+* **Profile Pages** (`x.com/<user>`)
+* **Notifications, Messages, Settings, Search, and Compose dialogs.**
+
+### 2. Startup Account Auto-Sync Scraper
+To keep the loaded persona aligned with real-world account metrics (followers, following, display name, bio), a startup scraper runs after authentication:
+1. Detects the logged-in handle from sidebar navigation or account switcher elements.
+2. Navigates to `x.com/<handle>` to parse profile metadata (updating the `identity & metadata` table in `<persona>-struct.md` on disk).
+3. Loads the metadata into memory so subsequent LLM cycles use correct user statistics.
+4. Returns the browser context back to the home timeline.
+
+### 3. Cursor Simulation Overlay
+* **Easing:** Simulates cursor movement using cubic Bézier curves.
+* **Visual Overlay:** In headed runs, renders a cursor pointer overlay in the DOM. Clicking triggers a scale animation and indicator waves.
+* **Stealth Bypass:** Skips visual overlays in headless mode (`DISABLE_CURSOR="true"`). Operates via `--no-cursor` in headed mode.
+
+### 4. Operator Approval Gate (`--ask`)
+Blocks the automated execution sequence. It summarizes pending interaction groups (author, target status, proposed text, and LLM logical reasoning score) and prompts the operator to approve (`Y`/`y`), reject (`N`/`n`), or skip (`S`/`s`) before touching the webpage.
 
 ### Models (Pydantic)
 

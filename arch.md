@@ -31,46 +31,51 @@
 │         │            │   decisions)   │                      │
 │         │            └───────┬───────┘                      │
 │         │                    │                               │
-│         │            ┌───────┴───────┐                       │
-│         │            │               │                       │
-│         │       ┌────┴────┐   ┌──────┴─────┐                │
-│         │       │ generate │   │  execute   │                │
-│         │       │ content  │   │  actions   │                │
-│         │       │ (LLM:    │   │  (likes    │                │
-│         │       │  reply/  │   │   only)    │                │
-│         │       │  quote)  │   └─────┬──────┘                │
-│         │       └────┬─────┘        │                        │
-│         │            └──────┬───────┘                        │
-│         │                   ▼                                 │
-│         │            ┌───────────────┐                       │
-│         │            │ execute_actions│  New tab per action  │
-│         │            │ (Playwright)   │  batch by post ID   │
-│         │            └───────┬───────┘                       │
-│         │                    ▼                                │
-│         │            ┌───────────────┐                       │
-│         │            │ log_activity   │──► .md               │
-│         │            └───────┬───────┘                       │
-│         │                    ▼                                │
-│         │            ┌───────────────┐                       │
-│         │            │ follow_decision│                      │
-│         │            └───────┬───────┘                       │
-│         │                    ▼                                │
-│         │            ┌───────────────┐                       │
-│         └────────────│ state_cleansing│                      │
-│                      │ (clear cycle   │                      │
-│                      │  state, keep   │                      │
-│                      │  persona +     │                      │
-│                      │  seen IDs)     │                      │
-│                      └───────┬───────┘                       │
-│                              ▼                                │
-│                      ┌───────────────┐                       │
-│                      │  scroll_page   │                       │
-│                      │  (5-15s delay  │                       │
-│                      │   + smooth     │                       │
-│                      │   scroll)      │                       │
-│                      └───────┬───────┘                       │
-│                              │                                │
-│                              └── END (per cycle)              │
+│         │            ┌───────┴────────────────────────┐      │
+│         │            │                                │      │
+│         │      ┌─────▼─────┐                   ┌──────▼─────┐│
+│         │      │  hydrate  │                   │  execute   ││
+│         │      │  replies  │                   │  actions   ││
+│         │      └─────┬─────┘                   │  (likes    ││
+│         │            ▼                         │   only)    ││
+│         │      ┌─────▼─────┐                   └──────┬─────┘│
+│         │      │ generate  │                          │      │
+│         │      │ content   │                          │      │
+│         │      │ (LLM:     │                          │      │
+│         │      │  reply/   │                          │      │
+│         │      │  quote)   │                          │      │
+│         │      └─────┬─────┘                          │      │
+│         │            └──────────────┬─────────────────┘      │
+│         │                           ▼                        │
+│         │                    ┌───────────────┐               │
+│         │                    │ execute_actions│  New tab per post,   │
+│         │                    │ (Playwright)   │  batch all actions   │
+│         │                    └───────┬───────┘               │
+│         │                            ▼                       │
+│         │                    ┌───────────────┐               │
+│         │                    │ log_activity   │──► .md       │
+│         │                    └───────┬───────┘               │
+│         │                            ▼                       │
+│         │                    ┌───────────────┐               │
+│         │                    │ follow_decision│              │
+│         │                    └───────┬───────┘               │
+│         │                            ▼                       │
+│         │                    ┌───────────────┐               │
+│         └────────────────────│ state_cleansing│              │
+│                              │ (clear cycle   │              │
+│                              │  state, keep   │              │
+│                              │  persona +     │              │
+│                              │  seen IDs)     │              │
+│                              └───────┬───────┘               │
+│                                      ▼                       │
+│                              ┌───────────────┐               │
+│                              │  scroll_page   │               │
+│                              │  (5-15s delay  │               │
+│                              │   + smooth     │               │
+│                              │   scroll)      │               │
+│                              └───────┬───────┘               │
+│                                      │                       │
+│                                      └── END (per cycle)     │
 └──────────────────────────────────────────────────────────────┘
                            │
             Runner handles breaks externally:
@@ -84,14 +89,15 @@
 ## Per-cycle flow (one graph.ainvoke call)
 
 1. `load_persona` — parse persona (no-op if already loaded)
-2. `scroll_feed` — parse currently visible posts, filter seen/engaged
+2. `scroll_feed` — parse currently visible posts, filter seen/engaged, and log page transitions
 3. `llm_decide` — **LLM** sees full persona profile + visible feed posts, returns structured decisions via `EngagementDecisions` Pydantic model (action_type as list of like/reply/quote, score, reason). IGNORE posts are omitted entirely.
-4. `generate_content` — if reply/quote actions exist, dedicated LLM call per action with writing samples to generate text, enforcing persona constraints (vocabulary, casing, emoji rules from tone rules)
-5. `execute_actions` — new tab per post, all actions on one tab
-6. `log_activity` — append to `<persona>-activity-log.md`
-7. `follow_decision` — evaluate follow candidates
-8. `state_cleansing` — clear cycle state (keep persona + seen IDs)
-9. `scroll_page` — wait 5-15s, **3 smooth scrolls** (1s gap), increment scroll_count → end cycle
+4. `hydrate_replies` — if reply/quote actions exist, Playwright navigates to status page in new tab to fetch thread ancestor/peer context and check for duplicate replies.
+5. `generate_content` — if reply/quote actions exist, dedicated LLM call per action with writing samples and hydrated thread context to generate text, enforcing persona constraints (vocabulary, casing, emoji rules).
+6. `execute_actions` — executes pending likes, reposts, replies, and quotes (opening exactly one tab per post). Supports an interactive approval mode (`--ask`) displaying author, actions, and scores for operator consent (`Y`/`n`/`s`).
+7. `log_activity` — append to `<persona>-activity-log.md`
+8. `follow_decision` — evaluate follow candidates
+9. `state_cleansing` — clear cycle state (keep persona + seen IDs)
+10. `scroll_page` — wait 5-15s, **3 smooth scrolls** (1s gap), increment scroll_count → end cycle
 
 ## Scroll happens after decisions, not before
 
@@ -186,7 +192,7 @@ src/
 │   └── llm_decide_user.md         # User prompt template with feed posts
 ├── generate_persona.py            # Phase 1: source data → persona-struct.md
 ├── agent/
-│   ├── runner.py                  # CLI entry point, perpetual loop, break logic
+│   ├── runner.py                  # CLI entry point, perpetual loop, break logic, live sync
 │   ├── graph.py                   # LangGraph StateGraph (one cycle per ainvoke)
 │   ├── state.py                   # PersonaState TypedDict
 │   ├── config.py                  # LLM provider factory (OpenAI/Anthropic/DashScope)
@@ -196,9 +202,10 @@ src/
 │   │   ├── load_persona.py        # Parse persona-struct.md (no-op on re-entry)
 │   │   ├── fetch_feed.py          # → scroll_feed (parse viewport, dedup)
 │   │   ├── llm_decide.py          # → LLM: decide which posts to engage with
+│   │   ├── hydrate_replies.py     # → Playwright: scrape thread ancestor context
 │   │   ├── generate_content.py    # → LLM: write reply/quote text with samples
 │   │   ├── scroll_page.py         # → scroll_page (5-15s delay, smooth scroll)
-│   │   ├── execute_actions.py     # Playwright: new tab per post, batch all actions
+│   │   ├── execute_actions.py     # Playwright: new tab per post, batch all actions, approvals
 │   │   ├── log_activity.py        # Append to activity-log.md
 │   │   ├── follow_decision.py     # Score accounts, decide to follow
 │   │   └── state_cleansing.py     # Clear cycle state, preserve persona + seen IDs
@@ -210,8 +217,9 @@ src/
 │   │                              # PostDecision, EngagementDecisions (Pydantic)
 │   └── log.py                     # ActivityLogEntry, ActivityLog
 └── utils/
-    ├── browser.py                 # BrowserSession (Playwright lifecycle)
-    ├── feed.py                    # navigate_home, scroll_down (smooth), _parse_article
+    ├── browser.py                 # BrowserSession (Playwright lifecycle, 100% desktop scale)
+    ├── feed.py                    # navigate_home, scroll_down (smooth), _parse_article, page state
+    ├── mouse.py                   # cubic Bézier mouse easing pointer and press ripples
     └── post.py                    # get_post_data, open_post_tab, like/repost/reply/quote_on_page
 ```
 
@@ -220,20 +228,42 @@ src/
 | Node | Type | Purpose |
 |---|---|---|
 | `load_persona` | sync | Parse persona-struct.md → sections dict (no-op if already loaded) |
-| `scroll_feed` | async | Parse visible posts, filter dedup (no scroll) |
+| `scroll_feed` | async | Parse visible posts, filter dedup (no scroll), logs active page states |
 | `llm_decide` | async | LLM sees persona + feed posts → structured `EngagementDecisions` via `.with_structured_output()` |
-| `generate_content` | async | LLM generates reply/quote text for pending actions (with writing samples) |
-| `execute_actions` | async | New tab per post (batch actions by post ID), 3–8s delay |
+| `hydrate_replies` | async | Scrapes parent / peer replies in thread for context-aware chaining |
+| `generate_content` | async | LLM generates reply/quote text utilizing thread context and writing samples |
+| `execute_actions` | async | New tab per post (batch actions by post ID), 3–8s delay (supports terminal approvals) |
 | `log_activity` | sync | Append to `<persona>-activity-log.md`, persist rate limits |
 | `follow_decision` | sync | Evaluate follow candidates against criteria + session limits |
-| `state_cleansing` | sync | Clear feed_posts, scored_posts, actions; keep persona + seen IDs |
+| `state_cleansing` | sync | Clear cycle state (keep persona + seen IDs) |
 | `scroll_page` | async | Wait 5–15s, smooth scroll one viewport, increment scroll_count |
+
+## Custom Interaction Utilities
+
+### 1. Bézier Cursor Interaction
+To support mouse-based interaction simulation:
+* **Easing:** Moves the cursor along cubic Bézier curves.
+* **Cursor Overlay:** In headed runs (`--visible`), renders a mouse pointer overlay in the DOM. Clicking triggers a scale animation and indicator waves.
+* **Stealth Bypass:** Mouse DOM injections are bypassed during headless runs. The operator can deactivate overlays in headed sessions via the `--no-cursor` switch.
+
+### 2. Startup Account Auto-Sync Scraper
+When starting a session:
+1. The orchestrator queries the left-hand navigation sidebar for the profile button, immediately resolving the active logged-in handle.
+2. Navigates automatically to the user's profile and scrapes actual real-time statistics (followers, following, display name, bio, and verified status) using dual-selector compatible queries.
+3. Rewrites the `identity & metadata` table in `<persona>-struct.md` on disk safely (preserving all custom metadata).
+4. Re-loads the parsed metadata into memory so that the agent's LLM cycles act on perfectly accurate stats.
+
+### 3. Interactive Approval Gateway (`--ask`)
+Bypasses the automated execution sequence. It summarizes pending interaction groups (author, target status, proposed text, and LLM logical reasoning score) and prompts the operator to approve (`Y`/`y`), reject (`N`/`n`), or skip (`S`/`s`) before executing actions on the page.
+
+### 4. Dynamic Page-State Recognition Engine
+Every navigation and new tab load calls `detect_current_page(page: Page) -> str` to identify and print context-specific logs identifying if we are on the Home Feed, Login Screen, Profile Page, Notifications panel, Settings, or Tweet detail tabs.
 
 ## Prompt templates
 
 All prompt templates are in `src/prompts/`:
 
-- **`llm_decide_system.md`**: Persona identity, linguistic style, topics, accounts, format preferences, engagement thresholds/matrix, reply guidelines, tone rules, follow criteria → filled dynamically from persona sections with `{persona_sections}` placeholder. IGNORE is not an action type — only LIKE/REPLY/QUOTE are returned.
-- **`llm_decide_user.md`**: Rendered feed posts → filled with `{feed_posts}`
+- **`llm_decide_system.md`**: Dynamic prompt filled with `{persona_sections}` capturing stances, rules, thresholds, and profiles.
+- **`llm_decide_user.md`**: Filled dynamically with `{feed_posts}`.
 
-The `generate_content` node builds its prompt dynamically (no template file needed since writing samples vary per action). It receives the same full persona profile via `_build_persona_text()` and an explicit instruction to obey persona constraints (vocabulary, casing, emoji rules).
+The `generate_content` node compiles prompts dynamically combining `{persona_sections}`, hydrated thread context, and selected writing samples.

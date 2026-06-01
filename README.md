@@ -1,131 +1,53 @@
 # X Personas
 
-Autonomous social media agent that mimics real personas on X/Twitter.
-Scrolls feed one viewport at a time, scores posts, opens each interaction
-in a new browser tab, and loops perpetually with randomized human-like delays.
+Autonomous X/Twitter agent that loads a structured persona, scrolls the home feed, decides engagements using an LLM, generates in-character responses, and executes actions via Playwright.
 
-## How to run
+## Quick Start
 
-### 1. Install
-
+### 1. Setup
 ```bash
-git clone <repo> && cd x-personas
+git clone <repo> && cd x-persona
 uv sync
+cp .env.example .env # Add your LLM keys (DASHSCOPE_API_KEY, etc.)
 ```
 
-### 2. Set up environment
-
-Copy `.env.example` to `.env` with your LLM provider key:
-
+### 2. Authenticate
 ```bash
-cp .env.example .env
-# Then edit .env with your API keys
+# Log in manually once to save auth.json session
+uv run python -m src.agent.runner --persona <your-persona>.md --visible --once
 ```
 
-Supported providers:
-
-| Provider | Key env var | Model env var | Base URL env var |
-|---|---|---|---|
-| DashScope | `DASHSCOPE_API_KEY` | `DASHSCOPE_MODEL` | `DASHSCOPE_BASE_URL` |
-| OpenAI | `OPENAI_API_KEY` | `OPENAI_MODEL` | — |
-| Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` | — |
-
-### 3. Authenticate with X
-
-Run the agent once **with `--visible`** so you can log into X manually.
-This creates `auth.json` (Playwright saved session) for future headless runs:
-
+### 3. Generate Persona
 ```bash
-uv run python -m src.agent.runner --persona <your-persona>.md --once
+uv run python -m src.generate_persona <raw-samples>.md
 ```
 
-A browser window opens → log into X → close the window. Auth is saved.
-
-### 4. Generate a persona
-
-Scraped posts/replies → LLM analyzes tone, topics, slang, reply style → structured persona file:
-
+### 4. Run Agent
 ```bash
-# Preview what would be generated
-uv run python -m src.generate_persona <handle>.md --dry-run
+# Dry run (test LLM decisions, no browser)
+uv run python -m src.agent.runner --persona <persona>-struct.md --dry-run
 
-# Generate the persona-struct.md
-uv run python -m src.generate_persona <handle>.md
+# Continuous Loop (Default)
+uv run python -m src.agent.runner --persona <persona>-struct.md --provider dashscope
+
+# With Manual Action Approval
+uv run python -m src.agent.runner --persona <persona>-struct.md --provider dashscope --visible --ask
 ```
 
-Input: markdown file with raw scraped posts/replies (see `purusha-persona.md`)
-Output: `<handle>-persona-struct.md`
-
-### 5. Dry run (verify persona)
-
-Parses the persona, scores sample posts, shows decisions — no browser or LLM needed:
-
-```bash
-uv run python -m src.agent.runner --persona <handle>-persona-struct.md --dry-run
-```
-
-### 6. Run the agent
-
-#### Single cycle (one scroll, act, exit)
-
-```bash
-uv run python -m src.agent.runner --persona <handle>-persona-struct.md --provider dashscope --once
-```
-
-#### Perpetual (default)
-
-Scrolls 1500 times (~1–3 hours of activity), takes a 10–30 minute break, re-navigates to x.com/home, repeats:
-
-```bash
-uv run python -m src.agent.runner --persona <handle>-persona-struct.md --provider dashscope
-```
-
-#### Infinite scrolling (no break)
-
-```bash
-uv run python -m src.agent.runner --persona <handle>-persona-struct.md --provider dashscope --scroll-limit -1
-```
-
-## CLI flags
+## CLI Reference
 
 | Flag | Default | Description |
 |---|---|---|
 | `--persona` | required | Path to persona-struct.md |
 | `--provider` | `openai` | `openai`, `anthropic`, or `dashscope` |
-| `--model` | provider default | Model name |
-| `--api-key` | env var | API key override |
-| `--base-url` | env var | Base URL override |
-| `--visible` | off | Show browser window (default: headless) |
-| `--quiet` | off | Suppress debug logs |
-| `--dry-run` | off | Parse + score only, no browser/LLM |
-| `--once` | off | Single cycle then exit |
-| `--scroll-limit` | 1500 | Scrolls before break (`-1` = infinite) |
-| `--browser` | auto | Path to Chromium binary (e.g. `/usr/bin/chromium`) |
+| `--visible` | off | Run headed (shows browser window) |
+| `--dry-run` | off | Test LLM decisions without starting browser |
+| `--once` | off | Run a single cycle and exit |
+| `--ask` | off | Confirm actions `[Y/n/s]` in terminal before executing |
+| `--quiet` | off | Suppress debug logging |
 
-After `--scroll-limit` scrolls (default 1500) the agent pauses 10–30 minutes,
-re-navigates to x.com/home, and continues.
-
-## Human-like pacing
-
-| Phase | Delay |
-|---|---|
-| Between scrolls (after decisions) | 5–15s |
-| Between actions (same tab) | 3–8s |
-| After scroll limit | 10–30 min break |
-
-## Rate limits
-
-| Action | Per cycle | Per hour | Per day |
-|---|---|---|---|
-| likes | 5 | 20 | 80 |
-| replies | 2 | 8 | 30 |
-| reposts | 2 | 8 | 30 |
-| quotes | 1 | 4 | 15 |
-| follows | — | 3 | 15 |
-
-One action per unique handle per cycle. Limits persist across restarts via
-`.rate-limits-<persona>.json`.
-
-## Architecture
-
-See [arch.md](arch.md) for the full system design.
+## Features & Pacing
+* **Safe Delays:** 3–8s between actions, 5–15s between scrolls, 10–30 min break after `--scroll-limit` (default 2500 viewports).
+* **Auto-Sync:** Updates profile stats in `<persona>-struct.md` at startup.
+* **Strict Limits:** Enforces hourly and daily rate limits for likes, replies, quotes, reposts, and follows.
+* **Tab isolation:** Opens a single tab per post to perform all actions, then closes it.

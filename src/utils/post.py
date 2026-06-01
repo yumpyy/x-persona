@@ -172,28 +172,42 @@ async def _parse_reply_article(article) -> Reply | None:
 
 
 async def post(context: BrowserContext, text: str) -> PostResponse:
+    """Compose and publish a completely new original post (tweet) on X/Twitter.
+
+    Uses smooth visual mouse movements and high-fidelity clicking.
+    """
     page = context.pages[0] if context.pages else await context.new_page()
-
-    await page.goto("https://x.com/compose/post", wait_until="domcontentloaded")
-    await page.wait_for_selector('[data-testid="tweetTextarea_0"]', timeout=15000)
-
-    textarea = page.locator('[data-testid="tweetTextarea_0"]')
-    await textarea.fill(text)
-    await page.wait_for_timeout(500)
-
-    submit_btn = page.locator('[data-testid="tweetButtonInline"]')
-    await submit_btn.click()
-
     try:
-        await page.wait_for_url("**/status/**", timeout=10000)
-        current_url = page.url
-        status_match = re.search(r"/status/(\d+)", current_url)
-        status_id = status_match.group(1) if status_match else None
+        await page.goto("https://x.com/compose/post", wait_until="domcontentloaded")
+        
+        textarea = page.locator('[data-testid="tweetTextarea_0"]').first
+        await textarea.wait_for(state="visible", timeout=15000)
+        await page.wait_for_timeout(1000)
+
+        # Smooth glide cursor and click compose area
+        await smooth_click(page, textarea)
+        await page.wait_for_timeout(500)
+
+        # Type character-by-character naturally to emulate human keystroke profiles
+        import random
+        for char in text:
+            await page.keyboard.write(char)
+            await asyncio.sleep(random.uniform(0.015, 0.045))
+        await page.wait_for_timeout(1000)
+
+        # Locate the submit button (on compose dialog it is typically tweetButton, fallback to tweetButtonInline)
+        submit_btn = page.locator('[data-testid="tweetButton"]').first
+        if not await submit_btn.is_visible():
+            submit_btn = page.locator('[data-testid="tweetButtonInline"]').first
+
+        # Smooth glide cursor to click submit
+        await smooth_click(page, submit_btn)
+        await page.wait_for_timeout(3000)
 
         return PostResponse(
             success=True,
-            url=current_url,
-            status_id=status_id,
+            url=page.url,
+            status_id=None,
         )
     except Exception as e:
         return PostResponse(success=False, error=str(e))
@@ -293,6 +307,11 @@ async def quote(context: BrowserContext, status_id: str, text: str) -> ActionRes
 async def open_post_tab(context: BrowserContext, status_id: str) -> Page:
     page = await context.new_page()
     await page.goto(f"https://x.com/i/status/{status_id}", wait_until="domcontentloaded")
+    
+    from src.utils.feed import detect_current_page
+    from src.agent.log import log
+    log(f"Page loaded: {detect_current_page(page)}")
+    
     await page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
     return page
 

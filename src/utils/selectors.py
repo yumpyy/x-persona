@@ -71,7 +71,7 @@ PROFILE_LOCATION = '[data-testid="UserLocation"]'
 PROFILE_URL = '[data-testid="UserUrl"]'
 PROFILE_JOINED = '[data-testid="UserJoinDate"]'
 PROFILE_VERIFIED = '[data-testid="icon-verified"]'
-PROFILE_FOLLOWERS_LINK = 'a[href$="/verified_followers"]'
+PROFILE_FOLLOWERS_LINK = 'a[href$="/verified_followers"], a[href$="/followers"]'
 PROFILE_FOLLOWING_LINK = 'a[href$="/following"]'
 PROFILE_EDIT_BUTTON = '[data-testid="editProfileButton"]'
 

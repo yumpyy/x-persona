@@ -23,7 +23,7 @@ from src.utils.feed import navigate_home
 load_dotenv()
 
 
-async def dry_run(persona_file: str) -> None:
+async def dry_run(persona_file: str, llm_config: dict | None = None) -> None:
     persona_path = Path(persona_file)
     if not persona_path.exists():
         print(f"Persona file not found: {persona_file}", file=sys.stderr)
@@ -33,7 +33,8 @@ async def dry_run(persona_file: str) -> None:
 
     from src.agent.nodes.llm_decide import llm_decide, _build_feed_text, _build_persona_text
 
-    llm_config = get_llm_config()
+    if llm_config is None:
+        llm_config = get_llm_config()
     state = load_persona({
         "persona_file": str(persona_path),
         "activity_log_file": "",
@@ -146,7 +147,12 @@ async def run_perpetual(
     scroll_limit: int = 2500,
     llm_config: dict | None = None,
     browser_path: str | None = None,
+    ask: bool = False,
+    no_cursor: bool = False,
 ) -> None:
+    if headless or no_cursor:
+        os.environ["DISABLE_CURSOR"] = "true"
+
     persona_path = Path(persona_file)
     if not persona_path.exists():
         print(f"Persona file not found: {persona_file}", file=sys.stderr)
@@ -166,6 +172,58 @@ async def run_perpetual(
         await navigate_home(home_page)
         print(f"  Navigated to x.com/home (scroll_limit={scroll_limit}, headless={headless})")
 
+        # --- Dynamic Logged-in Username & Live Stats Sync ---
+        logged_in_handle = None
+        try:
+            profile_link = home_page.locator('a[data-testid="AppTabBar_Profile_Link"]').first
+            if await profile_link.is_visible(timeout=3000):
+                href = await profile_link.get_attribute("href")
+                if href:
+                    logged_in_handle = href.lstrip("/").strip()
+        except Exception:
+            pass
+
+        if not logged_in_handle:
+            try:
+                switcher = home_page.locator('[data-testid="SideNav_AccountSwitcher_Button"]').first
+                if await switcher.is_visible(timeout=2000):
+                    text = await switcher.inner_text()
+                    import re
+                    matches = re.findall(r"@(\w+)", text)
+                    if matches:
+                        logged_in_handle = matches[0].strip()
+            except Exception:
+                pass
+
+        if logged_in_handle:
+            print(f"\n👤 [Startup] Logged-in user detected: @{logged_in_handle}")
+            print(f"  Scraping latest profile statistics for @{logged_in_handle}...")
+            try:
+                from src.utils.profile import get_profile_stats, update_persona_file_metadata
+                stats = await get_profile_stats(home_page, logged_in_handle)
+                print(f"  Successfully scraped profile: {stats.display_name} (@{stats.handle})")
+                print(f"  Followers: {stats.followers} | Following: {stats.following} | Posts: {stats.posts_count} | Verified: {stats.verified}")
+                
+                # Safely update the persona file on disk
+                persona_path = Path(persona_file)
+                update_persona_file_metadata(
+                    persona_path,
+                    handle=stats.handle,
+                    display_name=stats.display_name,
+                    bio=stats.bio,
+                    followers=stats.followers,
+                    following=stats.following,
+                    verified=stats.verified
+                )
+                print(f"💾 Synchronized live profile statistics into {persona_path.name}")
+                
+                # Re-navigate home to return to feed
+                await navigate_home(home_page)
+            except Exception as err:
+                print(f"⚠️  Could not sync profile stats for @{logged_in_handle}: {err}")
+        else:
+            print("⚠️  Could not detect logged-in username from the current session.")
+
         graph = create_graph()
         config = {
             "configurable": {
@@ -173,6 +231,7 @@ async def run_perpetual(
                 "browser_context": ctx,
                 "home_page": home_page,
                 "llm_config": llm_config,
+                "ask": ask,
             }
         }
 
@@ -292,6 +351,18 @@ def main() -> None:
         default=None,
         help="Path to Chromium binary (default: Playwright-managed browser)",
     )
+    parser.add_argument(
+        "--ask",
+        action="store_true",
+        default=False,
+        help="Ask for confirmation before executing any action (approval mode)",
+    )
+    parser.add_argument(
+        "--no-cursor",
+        action="store_true",
+        default=False,
+        help="Completely disable visual cursor and click ripple overlays in headed mode",
+    )
 
     args = parser.parse_args()
 
@@ -317,7 +388,7 @@ def main() -> None:
     )
 
     if args.dry_run:
-        asyncio.run(dry_run(args.persona))
+        asyncio.run(dry_run(args.persona, llm_config=llm_config))
         return
 
     limit = args.scroll_limit
@@ -330,6 +401,8 @@ def main() -> None:
         scroll_limit=limit,
         llm_config=llm_config,
         browser_path=args.browser,
+        ask=args.ask,
+        no_cursor=args.no_cursor,
     ))
 
 

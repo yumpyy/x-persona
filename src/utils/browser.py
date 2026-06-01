@@ -66,18 +66,23 @@ class BrowserSession:
             "--disable-blink-features=AutomationControlled",
             "--force-device-scale-factor=1",
         ]
+        if not self.headless:
+            launch_args.append("--start-maximized")
 
         context_kwargs: dict = dict(
             user_agent=self.user_agent,
             locale=self.locale,
-            viewport=self.viewport,
             color_scheme="light",
             reduced_motion="no-preference",
             permissions=["clipboard-read", "clipboard-write"],
-            device_scale_factor=1,
             is_mobile=False,
             has_touch=False,
         )
+        if self.headless:
+            context_kwargs["viewport"] = self.viewport
+            context_kwargs["device_scale_factor"] = 1
+        else:
+            context_kwargs["no_viewport"] = True
 
         if self.timezone_id:
             context_kwargs["timezone_id"] = self.timezone_id

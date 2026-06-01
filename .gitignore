@@ -23,6 +23,7 @@ env/
 auth.json
 auth_state.json
 *.state.json
+.auth/
 
 # Environment
 .env

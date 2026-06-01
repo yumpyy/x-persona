@@ -17,3 +17,8 @@ dependencies = [
 [project.scripts]
 x-personas = "src.agent.runner:main"
 generate-persona = "src.generate_persona:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_test_loop_scope = "function"
+

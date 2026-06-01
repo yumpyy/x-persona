@@ -164,9 +164,81 @@ async def _parse_article(article) -> FeedPost | None:
     )
 
 
+def detect_current_page(page: Page) -> str:
+    url = page.url
+    if "x.com/home" in url or "twitter.com/home" in url:
+        return "Home Feed"
+    elif "/status/" in url:
+        match = re.search(r"/status/(\d+)", url)
+        status_id = match.group(1) if match else "Unknown"
+        return f"Tweet Detail (ID: {status_id})"
+    elif "x.com/i/flow/login" in url or "x.com/login" in url:
+        return "Login Screen"
+    elif "x.com/notifications" in url:
+        return "Notifications"
+    elif "x.com/messages" in url:
+        return "Direct Messages"
+    elif "x.com/bookmarks" in url:
+        return "Bookmarks"
+    elif "x.com/search" in url:
+        return "Search Page"
+    elif "x.com/settings" in url:
+        return "Settings"
+    elif "x.com/compose/post" in url:
+        return "Post Compose Dialog"
+    else:
+        parsed_path = url.replace("https://", "").replace("http://", "").split("/")
+        if len(parsed_path) > 1:
+            potential_handle = parsed_path[1].split("?")[0]
+            if potential_handle and potential_handle not in (
+                "home", "explore", "notifications", "messages", "bookmarks", "settings", "i", "search"
+            ):
+                return f"Profile Page (@{potential_handle})"
+        return f"Unknown Page ({url})"
+
+
 async def navigate_home(page: Page) -> None:
     await page.goto("https://x.com/home", wait_until="domcontentloaded")
-    await page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
+    
+    from src.agent.log import log
+    log(f"Page loaded: {detect_current_page(page)}")
+    
+    # Fast path: check if tweets load within 5 seconds initially
+    try:
+        await page.wait_for_selector('article[data-testid="tweet"]', timeout=5000)
+        return
+    except Exception:
+        pass
+
+    # Timeline failed to load within 5 seconds (could be logged out, slow network, or landing page redirect)
+    print("\n" + "!" * 80)
+    print("⚠️  X TIMELINE LOAD TIMEOUT (COULD BE LOGGED OUT OR SLOW NETWORK)")
+    print("👉 If you are logged out, please log in manually in the visible headed browser window.")
+    print("👉 The agent will automatically resume once the timeline is loaded successfully.")
+    print("!" * 80 + "\n")
+
+    # Poll for the timeline to load for up to 120 seconds
+    max_poll_seconds = 120
+    for sec in range(1, max_poll_seconds + 1):
+        if page.is_closed():
+            raise RuntimeError("Browser tab was closed during login waiting.")
+
+        # Check if timeline tweets are now visible
+        if await page.locator('article[data-testid="tweet"]').first.is_visible():
+            print("\n✅ Session successfully authenticated and loaded! Resuming agent loops...")
+            try:
+                await page.context.storage_state(path="auth.json")
+                print("💾 Saved new authenticated session cookies to auth.json")
+            except Exception as save_err:
+                print(f"⚠️  Could not save auth.json state: {save_err}")
+            return
+
+        if sec % 10 == 0:
+            print(f"⏱️  Still waiting for timeline to load... ({sec}/{max_poll_seconds}s passed)")
+
+        await page.wait_for_timeout(1000)
+
+    raise TimeoutError("Failed to load timeline or authenticate session within 120 seconds.")
 
 
 async def scroll_down(page: Page, times: int = 1) -> None:

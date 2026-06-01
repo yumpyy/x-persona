@@ -61,6 +61,11 @@ async def get_profile_stats(
     username = username.lstrip("@").lower()
     profile_url = f"https://x.com/{username}"
     await goto_and_wait(page, profile_url)
+    
+    from src.utils.feed import detect_current_page
+    from src.agent.log import log
+    log(f"Page loaded: {detect_current_page(page)}")
+    
     logger.info("Scraping profile: @%s", username)
 
     # Wait for the primary column to render
@@ -187,3 +192,96 @@ async def _extract_posts_count(page: Page, username: str) -> int:
         pass
 
     return 0
+
+
+def update_persona_file_metadata(
+    file_path,
+    handle: str,
+    display_name: str,
+    bio: str,
+    followers: int,
+    following: int,
+    verified: bool
+) -> None:
+    """Safely update the persona file on disk with the latest scraped profile stats.
+    
+    This function is completely non-destructive and only modifies the relevant rows
+    in the ## 1. identity & metadata section.
+    """
+    from pathlib import Path
+    import re
+    
+    path = Path(file_path)
+    if not path.exists():
+        return
+        
+    content = path.read_text(encoding="utf-8")
+    lines = content.split("\n")
+    
+    # Find ## 1. identity & metadata
+    sect_idx = -1
+    for i, line in enumerate(lines):
+        if re.match(r"^##\s+1\.\s+identity", line.strip(), re.IGNORECASE):
+            sect_idx = i
+            break
+            
+    if sect_idx == -1:
+        return
+        
+    # Locate the table
+    table_start = -1
+    table_end = -1
+    for i in range(sect_idx + 1, len(lines)):
+        line = lines[i].strip()
+        if line.startswith("|"):
+            if table_start == -1:
+                table_start = i
+            table_end = i
+        else:
+            if table_start != -1:
+                break
+                
+    if table_start == -1 or table_end == -1:
+        return
+        
+    table_rows = lines[table_start:table_end + 1]
+    headers = []
+    alignments = []
+    data_dict = {}
+    
+    for i, row in enumerate(table_rows):
+        cells = [c.strip() for c in row.strip("|").split("|")]
+        if i == 0:
+            headers = cells
+        elif i == 1:
+            alignments = cells
+        else:
+            if len(cells) >= 2:
+                key = cells[0].strip()
+                val = cells[1].strip()
+                data_dict[key] = val
+                
+    # Helper to find existing key with casing/spacing differences
+    def get_matching_key(target: str) -> str:
+        t = target.lower().replace(" ", "").replace("_", "").replace("-", "")
+        for k in data_dict:
+            k_norm = k.lower().replace(" ", "").replace("_", "").replace("-", "")
+            if k_norm == t or k_norm in t or t in k_norm:
+                return k
+        return target
+        
+    data_dict[get_matching_key("handle")] = handle
+    data_dict[get_matching_key("display name")] = display_name
+    data_dict[get_matching_key("bio")] = bio
+    data_dict[get_matching_key("follower count")] = str(followers)
+    data_dict[get_matching_key("following count")] = str(following)
+    data_dict[get_matching_key("verified")] = "yes" if verified else "no"
+    
+    new_table_lines = []
+    new_table_lines.append("| " + " | ".join(headers) + " |")
+    new_table_lines.append("| " + " | ".join(alignments) + " |")
+    for key, val in data_dict.items():
+        new_table_lines.append(f"| {key} | {val} |")
+        
+    new_lines = lines[:table_start] + new_table_lines + lines[table_end + 1:]
+    path.write_text("\n".join(new_lines), encoding="utf-8")
