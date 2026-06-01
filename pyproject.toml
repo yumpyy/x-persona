@@ -1,26 +1,19 @@
 [project]
 name = "x-personas"
 version = "0.1.0"
-description = "Playwright-based automation utilities for X (Twitter) persona management"
+description = "X Personas — autonomous social media agent"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "playwright>=1.60.0",
     "pydantic>=2.13.4",
+    "langgraph>=0.4.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+    "python-dotenv>=1.1.0",
 ]
 
 [project.scripts]
-x-login = "src.utils.browser:cli_login"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
-
-[dependency-groups]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=1.0",
-]
+x-personas = "src.agent.runner:main"
+generate-persona = "src.generate_persona:main"

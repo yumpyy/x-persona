@@ -1,6 +1,6 @@
-from __future__ import annotations
 from typing import Self
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
 from .feed import PostMetrics
 
 
@@ -11,7 +11,7 @@ class Reply(BaseModel):
     text: str
     timestamp: str
     likes: int = 0
-    replies: list[Reply] = Field(default_factory=list) # recursive nested replies
+    replies: list[Self] = [] # replies under replies
 
 
 class PostData(BaseModel):
@@ -21,8 +21,8 @@ class PostData(BaseModel):
     text: str
     timestamp: str
     metrics: PostMetrics
-    replies: list[Reply] = Field(default_factory=list)
-    media_urls: list[str] = Field(default_factory=list)
+    replies: list[Reply] = []
+    media_urls: list[str] = []
 
 
 class ActionResult(BaseModel):
@@ -30,13 +30,7 @@ class ActionResult(BaseModel):
     error: str | None = None
     timestamp: str | None = None
 
-    def __bool__(self) -> bool:
-        return self.success
-
 
 class PostResponse(ActionResult):
     url: str | None = None
     status_id: str | None = None
-
-    def __str__(self) -> str:
-        return self.status_id or ""

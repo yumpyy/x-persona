@@ -1,6 +1,8 @@
-from .feed import PostMetrics, QuotedPost, FeedPost, FeedResponse
-from .post import Reply, PostData, ActionResult, PostResponse
-from .profile import ProfileStats, MediaAttachment
+from src.models.feed import FeedPost, FeedResponse, PostMetrics, QuotedPost
+from src.models.post import ActionResult, PostData, PostResponse, Reply
+from src.models.scored import ScoreBreakdown, ScoredPost
+from src.models.engagement import ActionType, PendingAction, ExecutedAction
+from src.models.log import ActivityLogEntry, ActivityLog
 
 __all__ = [
     "PostMetrics",
@@ -11,6 +13,11 @@ __all__ = [
     "PostData",
     "ActionResult",
     "PostResponse",
-    "ProfileStats",
-    "MediaAttachment",
+    "ScoreBreakdown",
+    "ScoredPost",
+    "ActionType",
+    "PendingAction",
+    "ExecutedAction",
+    "ActivityLogEntry",
+    "ActivityLog",
 ]

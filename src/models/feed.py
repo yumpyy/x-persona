@@ -1,12 +1,12 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class PostMetrics(BaseModel):
-    likes: int = Field(default=0)
-    retweets: int = Field(default=0)
-    replies: int = Field(default=0)
-    views: int | None = Field(default=None)
-    bookmarks: int = Field(default=0)
+    likes: int = 0
+    retweets: int = 0
+    replies: int = 0
+    views: int | None = None
+    bookmarks: int = 0
 
 
 class QuotedPost(BaseModel):
@@ -29,9 +29,9 @@ class FeedPost(BaseModel):
     is_reply: bool = False
     is_pinned: bool = False
     is_sponsored: bool = False
-    metrics: PostMetrics = Field(default_factory=PostMetrics)
+    metrics: PostMetrics = PostMetrics()
     quoted_post: QuotedPost | None = None
-    media_urls: list[str] = Field(default_factory=list)
+    media_urls: list[str] = []
     author_avatar_url: str | None = None
 
 
