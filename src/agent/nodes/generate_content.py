@@ -48,7 +48,7 @@ async def generate_content(state: PersonaState, config=None) -> dict:
         parts.append(f"\nReason for engaging: {action.reason}")
         if source_samples:
             parts.append("\nReference writing samples:\n" + "\n\n".join(s[:600] for s in source_samples[:3]))
-        parts.append("\n\nWrite in the persona's natural voice. Be concise and spontaneous.")
+        parts.append("\n\nCRITICAL: Follow the persona's profile exactly — match vocabulary, casing, punctuation, and especially the emoji/slang rules from the profile above.")
 
         user_prompt = "\n".join(parts)
 

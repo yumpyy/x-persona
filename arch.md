@@ -78,19 +78,20 @@
                                                        → re-navigate x.com/home
                                                        → reset scroll_count
                                                        → reload engaged_ids from log
+                                                       (each cycle scrolls 3x, so ~833 cycles)
 ```
 
 ## Per-cycle flow (one graph.ainvoke call)
 
 1. `load_persona` — parse persona (no-op if already loaded)
 2. `scroll_feed` — parse currently visible posts, filter seen/engaged
-3. `llm_decide` — **LLM** sees full persona profile + visible feed posts, returns structured decisions via `EngagementDecisions` Pydantic model (action_type as list, score, reason)
-4. `generate_content` — if reply/quote actions exist, dedicated LLM call per action with writing samples to generate text
+3. `llm_decide` — **LLM** sees full persona profile + visible feed posts, returns structured decisions via `EngagementDecisions` Pydantic model (action_type as list of like/reply/quote, score, reason). IGNORE posts are omitted entirely.
+4. `generate_content` — if reply/quote actions exist, dedicated LLM call per action with writing samples to generate text, enforcing persona constraints (vocabulary, casing, emoji rules from tone rules)
 5. `execute_actions` — new tab per post, all actions on one tab
 6. `log_activity` — append to `<persona>-activity-log.md`
 7. `follow_decision` — evaluate follow candidates
 8. `state_cleansing` — clear cycle state (keep persona + seen IDs)
-9. `scroll_page` — wait 5-15s, smooth scroll one viewport → end cycle
+9. `scroll_page` — wait 5-15s, **3 smooth scrolls** (1s gap), increment scroll_count → end cycle
 
 ## Scroll happens after decisions, not before
 
@@ -232,7 +233,7 @@ src/
 
 All prompt templates are in `src/prompts/`:
 
-- **`llm_decide_system.md`**: Persona identity, linguistic style, topics, accounts, format preferences, engagement thresholds/matrix, reply guidelines → filled dynamically from persona sections with `{persona_sections}` placeholder
+- **`llm_decide_system.md`**: Persona identity, linguistic style, topics, accounts, format preferences, engagement thresholds/matrix, reply guidelines, tone rules, follow criteria → filled dynamically from persona sections with `{persona_sections}` placeholder. IGNORE is not an action type — only LIKE/REPLY/QUOTE are returned.
 - **`llm_decide_user.md`**: Rendered feed posts → filled with `{feed_posts}`
 
-The `generate_content` node builds its prompt dynamically (no template file needed since writing samples vary per action).
+The `generate_content` node builds its prompt dynamically (no template file needed since writing samples vary per action). It receives the same full persona profile via `_build_persona_text()` and an explicit instruction to obey persona constraints (vocabulary, casing, emoji rules).

@@ -142,6 +142,10 @@ def _build_persona_text(sections: dict) -> str:
         if isinstance(files, list) and files:
             blocks.append("## Source Data\nSource files: " + ", ".join(str(f) for f in files))
 
+    tone = sections.get("12", [])
+    if isinstance(tone, list) and tone:
+        blocks.append("## Tone Rules\n" + "\n".join(f"- {t}" for t in tone if t))
+
     return "\n\n".join(blocks)
 
 
@@ -258,9 +262,14 @@ async def llm_decide(state: PersonaState, config=None) -> dict:
             {"role": "user", "content": user_prompt},
         ])
         decisions = result.decisions
+        decisions = [d for d in decisions if d.target_handle]
         log(f"llm_decide: LLM returned {len(decisions)} decisions")
         for d in decisions:
-            log(f"  {','.join(d.action_type):>8} @{d.target_handle:<20} score={d.score:.1f} reason=\"{d.reason[:60]}\"")
+            actions = [a for a in d.action_type if a.lower() in ("like", "reply", "quote")]
+            if actions:
+                log(f"  {','.join(actions):>8} @{d.target_handle:<20} score={d.score:.1f} reason=\"{d.reason[:60]}\"")
+            else:
+                log(f"  (ignored) @{d.target_handle:<20} score={d.score:.1f} reason=\"{d.reason[:60]}\"")
     except Exception as e:
         log(f"llm_decide: LLM call failed: {e}")
         return {"pending_actions": [], "cycle_action_counts": {}, "_routing_target": "log_activity"}

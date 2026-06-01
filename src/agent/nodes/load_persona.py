@@ -343,6 +343,11 @@ def load_persona(state: PersonaState) -> dict:
 
     sections["9i"] = _parse_follow_criteria(lines)
 
+    tone_bounds = _find_section(lines, "12")
+    if tone_bounds:
+        tone_lines = [g.strip() for g in lines[tone_bounds[0] + 1:tone_bounds[1]] if g.strip() and not g.strip().startswith("##")]
+        sections["12"] = tone_lines
+
     source_data_files = _parse_source_data_files(lines)
 
     sections["13"] = {"source_files": source_data_files}
