@@ -29,7 +29,7 @@ def _build_persona_text(sections: dict[str, Any]) -> str:
     if isinstance(sec1, str) and sec1.strip():
         blocks.append("## Persona Identity\n" + sec1.strip())
     elif isinstance(sec1, dict):
-        lines = [f"{k}: {v}" for k, v in sec1.items() if v and isinstance(v, str)]
+        lines = [f"{k}: {v.replace('<br>', '\n')}" for k, v in sec1.items() if v and isinstance(v, str)]
         if lines:
             blocks.append("## Persona Identity\n" + "\n".join(lines))
 
@@ -73,14 +73,16 @@ def _build_persona_text(sections: dict[str, Any]) -> str:
         lines = []
         baseline = replies.get("baseline_style")
         if isinstance(baseline, str) and baseline.strip():
-            lines.append(f"Baseline: {baseline.strip()}")
+            lines.append(f"Baseline style: {baseline.strip()}")
         for row in replies.get("length_matrix", []):
             lines.append(f"- Situation: {row.get('situation','')} \u2192 Length: {row.get('length','')}, Tone: {row.get('tone','')}")
         for row in replies.get("escalation_triggers", []):
             lines.append(f"- Trigger: {row.get('trigger','')} \u2192 Shift: {row.get('shift','')}")
+        for row in replies.get("common_reply_templates", []):
+            lines.append(f"- Template/Inspiration for {row.get('trigger','')}: e.g. \"{row.get('response','')}\"")
         tendency = replies.get("argumentative_tendency")
-        if tendency:
-            lines.append(f"Argumentative tendency: {tendency}")
+        if isinstance(tendency, str) and tendency.strip():
+            lines.append(f"Argumentative tendency: {tendency.strip()}")
         if lines:
             blocks.append("## Reply Behavior\n" + "\n".join(lines))
 
@@ -100,9 +102,21 @@ def _build_persona_text(sections: dict[str, Any]) -> str:
         if lines:
             blocks.append("## Engagement Triggers\n" + "\n".join(lines))
 
-    sec8 = sections.get("8", {})
-    if isinstance(sec8, dict) and sec8:
-        blocks.append("## Topic Stances\n" + "\n".join(f"- {k}: stance={v}" for k, v in sec8.items()))
+    sec8 = sections.get("8", [])
+    if sec8:
+        if isinstance(sec8, list):
+            lines = []
+            for s in sec8:
+                if isinstance(s, dict):
+                    topic = s.get("topic", "")
+                    stance = s.get("stance", "")
+                    intensity = s.get("intensity", "")
+                    nuance = s.get("nuance", "")
+                    lines.append(f"- {topic}: stance={stance} (intensity: {intensity}). Nuance/Action policy: {nuance}")
+            if lines:
+                blocks.append("## Topic Stances\n" + "\n".join(lines))
+        elif isinstance(sec8, dict):
+            blocks.append("## Topic Stances\n" + "\n".join(f"- {k}: stance={v}" for k, v in sec8.items()))
 
     topics = sections.get("9a", {})
     if isinstance(topics, dict) and topics:
@@ -161,7 +175,8 @@ def _build_feed_text(posts: list[Any]) -> str:
     lines: list[str] = []
     for i, p in enumerate(posts, 1):
         lines.append(f"Post {i}:")
-        lines.append(f"  Author: @{p.handle or 'unknown'}")
+        verified_suffix = " (VERIFIED/PREMIUM ACCOUNT - High priority for organic impressions)" if getattr(p, "author_verified", False) else ""
+        lines.append(f"  Author: @{p.handle or 'unknown'}{verified_suffix}")
         lines.append(f"  Text: {p.text or '(no text)'}")
         if p.metrics:
             likes = getattr(p.metrics, 'likes', 0)
@@ -179,6 +194,16 @@ def _build_feed_text(posts: list[Any]) -> str:
         if include:
             lines.append(f"  Flags: {', '.join(include)}")
         lines.append("")
+    return "\n".join(lines)
+
+
+def _build_recent_engagements_text(engagements: list[dict]) -> str:
+    if not engagements:
+        return "No recent engagements logged."
+    lines = []
+    for e in engagements:
+        content_str = f" content: \"{e['content']}\"" if e['content'] else ""
+        lines.append(f"- [{e['action']}] target: {e['target']}{content_str} | reason: {e['context']}")
     return "\n".join(lines)
 
 
@@ -201,7 +226,8 @@ def _decisions_to_pending(
             continue
 
         action_types: list[ActionType] = []
-        for at_str in d.action_type:
+        unique_action_types = list(dict.fromkeys(d.action_type))
+        for at_str in unique_action_types:
             at_str = at_str.lower()
             if at_str not in ACTION_MAP:
                 continue
@@ -233,6 +259,61 @@ def _decisions_to_pending(
     return pending, cycle_counts
 
 
+def _get_disliked_topics(sections: dict) -> list[str]:
+    """Dynamically get the list of topics with 'dislike' or 'strong dislike' stance from the persona sections."""
+    disliked = []
+    stances = sections.get("8", [])
+    if isinstance(stances, list):
+        for s in stances:
+            if isinstance(s, dict):
+                stance_val = s.get("stance", "").lower()
+                topic_val = s.get("topic", "")
+                if "dislike" in stance_val:
+                    disliked.append(topic_val)
+    return disliked
+
+
+def _is_critical_engagement(action_dict: dict, disliked_topics: list[str]) -> bool:
+    """Helper to detect if a historical action was a critical critique based on content or reason context."""
+    context_lower = action_dict.get("context", "").lower()
+    content_lower = action_dict.get("content", "").lower()
+    
+    # Generic keywords indicating a critique/disagreement/negative response
+    general_keywords = {"critique", "dislike", "sarcasm", "slander", "bloat", "hype", "anti-"}
+    if any(kw in context_lower for kw in general_keywords):
+        return True
+    if any(kw in content_lower for kw in general_keywords):
+        return True
+        
+    for topic in disliked_topics:
+        words = [w.strip(" /,.-") for w in topic.lower().split() if len(w.strip(" /,.-")) > 1]
+        for w in words:
+            if w in context_lower or w in content_lower:
+                return True
+                
+    return False
+
+
+def _is_critical_decision(d: PostDecision, disliked_topics: list[str]) -> bool:
+    """Fallback detector to check if a new LLM decision is critical based on its reason or content."""
+    reason_lower = d.reason.lower()
+    content_lower = (d.content or "").lower()
+    
+    general_keywords = {"critique", "dislike", "sarcasm", "slander", "bloat", "hype", "anti-"}
+    if any(kw in reason_lower for kw in general_keywords):
+        return True
+    if any(kw in content_lower for kw in general_keywords):
+        return True
+        
+    for topic in disliked_topics:
+        words = [w.strip(" /,.-") for w in topic.lower().split() if len(w.strip(" /,.-")) > 1]
+        for w in words:
+            if w in reason_lower or w in content_lower:
+                return True
+                
+    return False
+
+
 async def llm_decide(state: PersonaState, config: RunnableConfig | None = None) -> dict[str, Any]:
     """Execute LLM decision engine to decide which feed posts are worth engaging.
 
@@ -255,6 +336,13 @@ async def llm_decide(state: PersonaState, config: RunnableConfig | None = None) 
 
     log(f"llm_decide: evaluating {len(new_posts)} post(s) via LLM")
 
+    recent_engagements = []
+    log_file = state.get("activity_log_file", "")
+    if log_file:
+        from src.agent.history import load_recent_engagements
+        recent_engagements = load_recent_engagements(log_file, limit=10)
+    recent_engagements_text = _build_recent_engagements_text(recent_engagements)
+
     persona_text = _build_persona_text(sections)
     feed_text = _build_feed_text(new_posts)
 
@@ -265,7 +353,7 @@ async def llm_decide(state: PersonaState, config: RunnableConfig | None = None) 
         log(f"llm_decide: Critical prompt error: {err}")
         return {"pending_actions": [], "cycle_action_counts": {}, "_routing_target": "log_activity"}
 
-    system_prompt = system_template.replace("{persona_sections}", persona_text)
+    system_prompt = system_template.replace("{persona_sections}", persona_text).replace("{recent_engagements}", recent_engagements_text)
     user_prompt = user_template.replace("{feed_posts}", feed_text)
 
     log(f"llm_decide: system prompt ({len(system_prompt)} chars)")
@@ -299,6 +387,34 @@ async def llm_decide(state: PersonaState, config: RunnableConfig | None = None) 
         decisions = result.decisions
         decisions = [d for d in decisions if d.target_handle]
         log(f"llm_decide: LLM returned {len(decisions)} decision(s)")
+
+        # Enforce strict critique variety policy in Python to prevent LLM soft-matching bypass
+        disliked_topics = _get_disliked_topics(sections)
+        has_recent_critique = any(_is_critical_engagement(e, disliked_topics) for e in recent_engagements)
+        log(f"llm_decide: recent history has critique = {has_recent_critique}")
+
+        filtered_decisions = []
+        critical_count_this_cycle = 0
+
+        # Sort decisions by score descending to prioritize high-quality options
+        sorted_decisions = sorted(decisions, key=lambda x: x.score, reverse=True)
+
+        for d in sorted_decisions:
+            is_crit = d.is_critical_critique or _is_critical_decision(d, disliked_topics)
+            if is_crit:
+                if has_recent_critique:
+                    log(f"  [VARIETY FILTER] Discarding critique decision targeting @{d.target_handle} because a critical engagement occurred recently in history.")
+                    continue
+                if critical_count_this_cycle >= 1:
+                    log(f"  [VARIETY FILTER] Discarding critique decision targeting @{d.target_handle} to enforce limit of at most ONE critical engagement per cycle.")
+                    continue
+                critical_count_this_cycle += 1
+                filtered_decisions.append(d)
+            else:
+                filtered_decisions.append(d)
+
+        decisions = filtered_decisions
+
         for d in decisions:
             actions = [a for a in d.action_type if a.lower() in ("like", "reply", "quote")]
             if actions:

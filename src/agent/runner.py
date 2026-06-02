@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from dotenv import load_dotenv
 from src.agent.config import get_llm_config
 from src.agent.graph import create_graph
-from src.agent.history import load_engaged_status_ids
+from src.agent.history import load_engaged_status_ids, load_engagements_since_last_post
 from src.agent.log import log, set_quiet
 from src.agent.nodes.load_persona import load_persona
 from src.agent.rate_limiter import cycle_caps
@@ -226,12 +226,37 @@ async def run_perpetual(
             print(f"  Scraping latest profile statistics for @{logged_in_handle}...")
             try:
                 from src.utils.profile import get_profile_stats, update_persona_file_metadata
+                
+                # Load the persona sections from disk first to get the configured bio
+                from src.agent.nodes.load_persona import load_persona
+                temp_state = load_persona({
+                    "persona_file": str(persona_path),
+                    "persona_sections": {},
+                    "source_data_files": [],
+                })
+                persona_sections = temp_state.get("persona_sections", {})
+                configured_bio = persona_sections.get("1", {}).get("bio", "").strip()
+
                 stats = await get_profile_stats(home_page, logged_in_handle)
                 print(f"  Successfully scraped profile: {stats.display_name} (@{stats.handle})")
                 print(f"  Followers: {stats.followers} | Following: {stats.following} | Posts: {stats.posts_count} | Verified: {stats.verified}")
                 
-                # Safely update the persona file on disk
-                persona_path = Path(persona_file)
+                # Check for profile bio updates
+                clean_configured_bio = configured_bio.replace("<br>", "\n").strip()
+                clean_scraped_bio = stats.bio.strip()
+                
+                if clean_configured_bio and clean_configured_bio != clean_scraped_bio:
+                    print(f"👤 [Startup] Bio mismatch detected. Local: \"{clean_configured_bio}\" vs X.com: \"{clean_scraped_bio}\".")
+                    print(f"🔄 Updating profile bio on X.com...")
+                    from src.utils.edit_profile import edit_profile
+                    res = await edit_profile(home_page, bio=clean_configured_bio)
+                    if res.success:
+                        print("✅ Profile bio successfully updated on X.com!")
+                        stats.bio = clean_configured_bio
+                    else:
+                        print(f"❌ Failed to update profile bio on X.com: {res.error}")
+
+                # Safely update the persona file on disk with the latest scraped stats
                 update_persona_file_metadata(
                     persona_path,
                     handle=stats.handle,
@@ -272,8 +297,9 @@ async def run_perpetual(
             "scroll_count": 0,
         }
 
-        session_engagements = 0
+        session_engagements = load_engagements_since_last_post(activity_log)
         target_original_post_count = random.randint(10, 20)
+        print(f"📊 [Original Post Scheduler] Loaded {session_engagements} engagements since last original post from history.")
         print(f"🎲 [Original Post Scheduler] Target engagements for next original tweet: {target_original_post_count}")
 
         cycle = 0

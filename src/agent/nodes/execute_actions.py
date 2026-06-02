@@ -84,6 +84,10 @@ async def execute_actions(state: PersonaState, config=None) -> dict:
             page = await open_post_tab(ctx, status_id)
             log(f"  tab opened for {status_id}")
 
+            # Simulate human reading dwell time before initiating actions
+            import random
+            await asyncio.sleep(random.uniform(2.5, 6.0))
+
             for action in actions:
                 action_label = action.action_type.value
 

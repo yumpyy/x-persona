@@ -272,7 +272,8 @@ def update_persona_file_metadata(
         
     data_dict[get_matching_key("handle")] = handle
     data_dict[get_matching_key("display name")] = display_name
-    data_dict[get_matching_key("bio")] = bio
+    safe_bio = bio.replace("\r\n", "<br>").replace("\n", "<br>") if bio else ""
+    data_dict[get_matching_key("bio")] = safe_bio
     data_dict[get_matching_key("follower count")] = str(followers)
     data_dict[get_matching_key("following count")] = str(following)
     data_dict[get_matching_key("verified")] = "yes" if verified else "no"

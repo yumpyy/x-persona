@@ -33,6 +33,7 @@ class FeedPost(BaseModel):
     quoted_post: QuotedPost | None = None
     media_urls: list[str] = []
     author_avatar_url: str | None = None
+    author_verified: bool = False
 
 
 class FeedResponse(BaseModel):

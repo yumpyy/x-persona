@@ -36,6 +36,7 @@ class PostDecision(BaseModel):
     content: Optional[str] = Field(default=None, description="Text for reply/quote (null for like-only)")
     score: float = Field(description="Relevance score 0-10")
     reason: str = Field(description="One-sentence explanation")
+    is_critical_critique: bool = Field(default=False, description="Set to True if this action represents a critical critique, disagreement, correction, or negative reaction targeting a disliked/unaligned topic (e.g. criticizing grinds, courses, framework hype, bloat, or bad programming practices). Otherwise False.")
 
 
 class EngagementDecisions(BaseModel):

@@ -94,6 +94,12 @@ async def _parse_article(article) -> FeedPost | None:
     author_name = await name_el.inner_text() if name_el else "Unknown"
     author_name = author_name.split("\n")[0].strip()
 
+    author_verified = False
+    if name_el:
+        verified_el = await name_el.query_selector('[data-testid="icon-verified"]')
+        if verified_el:
+            author_verified = True
+
     handle_el = await article.query_selector('[data-testid="User-Name"] a[tabindex="-1"] span')
     handle_text = await handle_el.inner_text() if handle_el else ""
     handle = handle_text.replace("@", "").strip() or "unknown"
@@ -161,6 +167,7 @@ async def _parse_article(article) -> FeedPost | None:
         quoted_post=quoted_post,
         media_urls=media_urls,
         author_avatar_url=avatar_url,
+        author_verified=author_verified,
     )
 
 

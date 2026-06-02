@@ -119,6 +119,41 @@ async def generate_content(state: PersonaState, config: RunnableConfig | None = 
         if source_samples:
             parts.append("\nReference writing samples:\n" + "\n\n".join(s[:600] for s in source_samples[:3]))
 
+        # Load and append recent engagements to ensure variety in reply content
+        recent_engagements = []
+        log_file = state.get("activity_log_file", "")
+        if log_file:
+            from src.agent.history import load_recent_engagements
+            recent_engagements = load_recent_engagements(log_file, limit=15)
+        
+        if recent_engagements:
+            from src.agent.nodes.llm_decide import _build_recent_engagements_text
+            recent_text = _build_recent_engagements_text(recent_engagements)
+            parts.append(
+                f"\n\nCRITICAL REPETITION AVOIDANCE RULE:\n"
+                f"Here are your own recent successful engagements (actions you took and what you wrote):\n"
+                f"{recent_text}\n"
+                f"You MUST NOT repeat the same arguments, concepts, criticisms, themes, vocabulary, or sentence patterns "
+                f"as the ones you have written in your recent replies listed above. Ensure this reply is completely fresh, "
+                f"distinct, and addresses a different aspect or uses a completely different phrasing."
+            )
+
+        parts.append(
+            "\n\nCRITICAL DIVERSITY & SPONTANEITY RULE: Read the 'common reply templates' (or trigger/typical response tables) in the persona profile above if any. "
+            "DO NOT copy-paste or repeat those exact template phrases literally across multiple replies! "
+            "Every single reply must be custom-written, highly spontaneous, and unique. Treat templates purely as stylistic inspiration "
+            "for the brevity, vibe, and tone, never as exact copy-paste text or repetitive macros."
+        )
+        parts.append(
+            "\n\nCRITICAL TECHNICAL ACCURACY & CONTEXTUAL RELEVANCE RULE:\n"
+            "1. Read the target post's code, technology, and programming language/topic very carefully.\n"
+            "2. Your reply/quote must be highly relevant and technically accurate to the specific topic discussed. "
+            "Only mention specialized jargon, stances, or vocabulary from your persona profile when they make complete technical and contextual sense "
+            "in the context of the target post's specific technology, language, or domain.\n"
+            "3. For example, do not force specialized theoretical concepts onto standard procedural or imperative posts unless they fit contextually, "
+            "and do not force low-level concepts onto high-level web posts unless it makes perfect sense for your character's stance. "
+            "Avoid blind keyword matching. Write a natural, technically coherent reply that a real, highly capable human developer or expert in that niche would write."
+        )
         parts.append("\n\nCRITICAL: Follow the persona's profile exactly — match vocabulary, casing, punctuation, and especially the emoji/slang rules from the profile above.")
 
         user_prompt = "\n".join(parts)
@@ -192,12 +227,9 @@ async def generate_original_post(
         f"{buckets_text}\n"
         f"{recent_text}\n"
         "GUIDELINES FOR TIME-OF-DAY, DIVERSITY, AND CONTINUITY:\n"
-        "- If it is Morning: Talk about waking up early, going for a run (e.g., a 2km run), weather, how you feel waking early, or gym beginner progress.\n"
-        "- If it is Afternoon/Evening: Talk about daytime engineering topics: FPGAs, microcontrollers, low-level coding, category theory, abstract algebra, classic programming books, or deadpan OOP/Java slander.\n"
-        "- If it is Late Night: Talk about late-night coding, fatigue, category theory math, pulling all-nighters, or sleeping.\n"
-        "- CONTINUITY: Read your recent original posts above. If you recently posted about a classic book you are reading (e.g., SICP or K&R C), today you should post about an interesting fact from the book, what you learned today, how much you completed, or your progress.\n"
-        "- DIVERSITY: Choose a topic/bucket that is DIFFERENT from your most recent post to keep your feed interesting and cover all aspects of your life (fitness, books, category theory, hardware).\n"
-        "- FITNESS SPECIFIC: If posting about the gym or running, write honest, beginner updates. Include the philosophy that doing a little bit (e.g., 15 minutes of workout) is far better than doing nothing at all.\n\n"
+        "- TIME-OF-DAY ALIGNMENT: Align the theme of your post with the time of day. For example, morning tweets might touch on morning routines, early starts, or starting the day; afternoon/evening tweets on core daytime topics, professional work, or daytime hobbies; and late-night tweets on late-night thoughts, winding down, or reflections.\n"
+        "- CONTINUITY: Read your recent original posts above. If you recently posted about an ongoing activity, project, book, or hobby, you may post a continuation (e.g., progress update, new discovery, or next step) to maintain natural narrative threads.\n"
+        "- DIVERSITY: Choose a topic or bucket that is DIFFERENT from your most recent post to keep your feed interesting and cover all aspects of your defined persona (e.g., balance professional, hobby, and personal thoughts if applicable).\n\n"
         "Follow your persona's profile exactly — match vocabulary, casing, punctuation, and emoji/slang rules.\n"
         "Keep it extremely minimal, quiet, direct, and short (under 140 characters). Do not write any explanations, just the tweet text."
     )

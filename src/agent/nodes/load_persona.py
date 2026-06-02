@@ -152,44 +152,73 @@ def _parse_reply_matrix(lines: list[str]) -> dict:
     if not bounds:
         return {}
 
+    baseline_style = ""
     length_matrix: list[dict] = []
     escalation: list[dict] = []
-    in_table = False
-    in_escalation = False
+    templates: list[dict] = []
+    argumentative_tendency = ""
+
+    current_table = None
 
     for i in range(bounds[0] + 1, bounds[1]):
         line = lines[i]
-        if "reply escalation" in line.lower():
-            in_escalation = True
-            in_table = False
+        line_strip = line.strip()
+        lower = line_strip.lower()
+
+        # Check for non-table lines
+        if "baseline style:" in lower:
+            baseline_style = line_strip.split("baseline style:")[-1].strip(" *:")
             continue
-        if line.startswith("##"):
+        if "argumentative tendency:" in lower:
+            argumentative_tendency = line_strip.split("argumentative tendency:")[-1].strip(" *:")
+            continue
+
+        # Detect which table we are entering
+        if "reply length matrix" in lower:
+            current_table = "length"
+            continue
+        elif "reply escalation" in lower:
+            current_table = "escalation"
+            continue
+        elif "common reply templates" in lower:
+            current_table = "templates"
+            continue
+        elif line_strip.startswith("##"):
             break
-        if line.startswith("|") and line.endswith("|"):
-            cells = [c.strip() for c in line.strip("|").split("|")]
-            if not cells[0] or re.match(r"^[\s|-]+$", line):
+
+        # Parse tables
+        if line_strip.startswith("|") and line_strip.endswith("|"):
+            cells = [c.strip() for c in line_strip.strip("|").split("|")]
+            if not cells or not cells[0] or re.match(r"^[\s|-]+$", line_strip):
                 continue
-            if not in_escalation:
-                if not in_table and len(cells) >= 3 and "situation" in cells[0].lower():
-                    in_table = True
-                    continue
-                if in_table and len(cells) >= 3:
-                    length_matrix.append({
-                        "situation": cells[0],
-                        "length": cells[1],
-                        "tone": cells[2] if len(cells) > 2 else "",
-                    })
-            else:
-                if len(cells) >= 2:
-                    escalation.append({
-                        "trigger": cells[0],
-                        "shift": cells[1] if len(cells) > 1 else "",
-                    })
+
+            # Skip table headers
+            if "situation" in cells[0].lower() or "trigger" in cells[0].lower():
+                continue
+
+            if current_table == "length" and len(cells) >= 3:
+                length_matrix.append({
+                    "situation": cells[0],
+                    "length": cells[1],
+                    "tone": cells[2]
+                })
+            elif current_table == "escalation" and len(cells) >= 2:
+                escalation.append({
+                    "trigger": cells[0],
+                    "shift": cells[1]
+                })
+            elif current_table == "templates" and len(cells) >= 2:
+                templates.append({
+                    "trigger": cells[0],
+                    "response": cells[1]
+                })
 
     return {
-        "baseline_style": "",
+        "baseline_style": baseline_style,
         "length_matrix": length_matrix,
         "escalation_triggers": escalation,
+        "common_reply_templates": templates,
+        "argumentative_tendency": argumentative_tendency,
     }
 
 
@@ -337,7 +366,20 @@ def load_persona(state: PersonaState) -> dict:
 
     stances = _find_section(lines, "8")
     if stances:
-        sections["8"] = _extract_table_section(lines, stances[0] + 1)
+        rows = _extract_table_rows(lines, stances[0] + 1)
+        sections["8"] = []
+        for row in rows:
+            topic = row.get("col0", "").strip()
+            stance = row.get("col1", "").strip()
+            intensity = row.get("col2", "").strip()
+            nuance = row.get("col3", "").strip()
+            if topic and not topic.startswith("-") and topic.lower() != "topic":
+                sections["8"].append({
+                    "topic": topic,
+                    "stance": stance,
+                    "intensity": intensity,
+                    "nuance": nuance,
+                })
 
     sections["9a"] = _parse_decision_weights(lines, "9a")
     sections["9b"] = _parse_decision_weights(lines, "9b")

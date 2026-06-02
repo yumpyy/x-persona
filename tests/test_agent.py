@@ -46,6 +46,12 @@ def test_persona_parsing():
     assert len(s["9a"]) > 0, f"9a weights empty (have keys: {list(s.keys())})"
     assert "9g" in s and len(s["9g"]) > 0, "9g matrix missing"
     assert "9f" in s and len(s["9f"]) > 0, "9f thresholds missing"
+    assert "8" in s and len(s["8"]) > 0, "Stances (8) missing"
+    assert isinstance(s["8"], list), "Stances (8) must be a parsed list"
+    assert "nuance" in s["8"][0], "Stances (8) elements must contain nuance"
+    assert "6" in s, "Section 6 missing"
+    assert s["6"].get("baseline_style") != "", "baseline_style should be parsed"
+    assert len(s["6"].get("common_reply_templates", [])) > 0, "common_reply_templates should be parsed"
     print(f"  \u2713 persona parsing: {len(s)} sections, {len(s['9a'])} topic weights {list(s['9a'].keys())[:3]}...")
 
 
@@ -107,6 +113,15 @@ def test_decisions_to_pending():
     assert len(pending2) == 1, "Should take first decision for handle, skip second"
     assert pending2[0].action_type == ActionType.LIKE
 
+    # action duplicate deduplication: ["like", "like", "reply"] should produce unique actions
+    decisions_action_dup = [
+        PostDecision(action_type=["like", "like", "reply"], target_status_id="555", target_handle="dave", score=8.0, reason="dup actions test"),
+    ]
+    pending3, _ = _decisions_to_pending(decisions_action_dup, limit_file)
+    assert len(pending3) == 2, f"Expected 2 pending actions (1 like, 1 reply), got {len(pending3)}"
+    assert pending3[0].action_type == ActionType.LIKE
+    assert pending3[1].action_type == ActionType.REPLY
+
     os.unlink(limit_file)
     print(f"  \u2713 decisions_to_pending: {len(pending)} pending, content=None, dedup works")
 
@@ -131,6 +146,10 @@ def test_llm_feed_text():
 def test_llm_persona_text():
     sections = {
         "1": "Test persona bio with interests in tech and farming.",
+        "8": [
+            {"topic": "Java / OOP", "stance": "strong dislike", "intensity": "high", "nuance": "slow, bloated"},
+            {"topic": "C / Rust", "stance": "strong love", "intensity": "high", "nuance": "bare-metal control"}
+        ],
         "9a": {"tech": 8.0, "farming": 7.0},
         "9b": {"stranger": 2.0, "friend": 7.0},
         "9f": {"3-4.9": "like only", "5-6.9": "reply + like"},
@@ -138,6 +157,9 @@ def test_llm_persona_text():
     text = _build_persona_text(sections)
     assert "Persona Identity" in text
     assert "Test persona bio" in text
+    assert "Topic Stances" in text
+    assert "Java / OOP: stance=strong dislike" in text
+    assert "Nuance/Action policy: slow, bloated" in text
     assert "Topic Affinity Weights" in text
     assert "tech: 8.0" in text
     assert "Account Relationship Weights" in text
@@ -229,6 +251,55 @@ def test_load_persona_empty_file():
         os.unlink(temp_name)
 
 
+def test_recent_engagements_loading():
+    from src.agent.history import load_recent_engagements
+    from src.agent.nodes.llm_decide import _build_recent_engagements_text
+
+    with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
+        f.write("| timestamp | action | target | content | score | context |\n")
+        f.write("|---|---|---|---|---|---|\n")
+        f.write("| 2024-01-01T00:00:00 | like | @user1 / 111 |  | 8.0 | systems design [✓] |\n")
+        f.write("| 2024-01-01T00:01:00 | reply | @user2 / 222 | cool | 7.0 | compilers [✓] |\n")
+        f.write("| 2024-01-01T00:02:00 | reply | @user3 / 333 | check | 6.0 | ignored/failed [✗] |\n")
+        log_file = f.name
+
+    engagements = load_recent_engagements(log_file, limit=5)
+    assert len(engagements) == 2, f"Expected 2 successful engagements, got {len(engagements)}"
+    assert engagements[0]["action"] == "reply"
+    assert engagements[0]["target"] == "@user2 / 222"
+    assert engagements[0]["context"] == "compilers"
+
+    text = _build_recent_engagements_text(engagements)
+    assert "- [reply] target: @user2 / 222 content: \"cool\" | reason: compilers" in text
+    assert "- [like] target: @user1 / 111 | reason: systems design" in text
+    print(f"  \u2713 recent engagements loading and formatting: verified")
+
+    os.unlink(log_file)
+
+
+def test_critique_variety_filters():
+    from src.agent.nodes.llm_decide import _is_critical_engagement, _is_critical_decision, PostDecision
+
+    disliked = ["bootcamp", "grind"]
+
+    # Test _is_critical_engagement
+    assert _is_critical_engagement({"context": "course-buyer / bootcamp boast", "content": ""}, disliked) is True
+    assert _is_critical_engagement({"context": "systems engineering", "content": "this is nice"}, disliked) is False
+    assert _is_critical_engagement({"context": "systems", "content": "don't do another dsa grind"}, disliked) is True
+
+    # Test _is_critical_decision
+    assert _is_critical_decision(PostDecision(
+        action_type=["reply"], target_status_id="1", target_handle="u1", score=8.0,
+        reason="Trigger: dsa ninja / corporate grind boast."
+    ), disliked) is True
+    assert _is_critical_decision(PostDecision(
+        action_type=["reply"], target_status_id="1", target_handle="u1", score=8.0,
+        reason="nice compiler design project"
+    ), disliked) is False
+
+    print(f"  \u2713 critique variety filtering helpers: verified")
+
+
 def test_generate_original_post():
     from src.agent.nodes.generate_content import generate_original_post
     assert generate_original_post is not None
@@ -249,5 +320,7 @@ if __name__ == "__main__":
     test_history_loading()
     test_load_persona_noop()
     test_load_persona_empty_file()
+    test_recent_engagements_loading()
+    test_critique_variety_filters()
     test_generate_original_post()
     print("\n\u2713 All agent tests passed!")
