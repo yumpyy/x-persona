@@ -2,6 +2,50 @@
 
 Autonomous X/Twitter agent that loads a structured persona, scrolls the home feed, decides engagements using an LLM, generates in-character responses, and executes actions via Playwright.
 
+```mermaid
+flowchart TB
+    subgraph Runner["🔄 Perpetual Runner (runner.py)"]
+        direction LR
+        LOOP["while True: await graph.ainvoke(state, config)"]
+    end
+
+    subgraph Graph["🧠 One LangGraph Cycle"]
+        direction TB
+        A["1. load_persona<br>Parse persona-struct.md into sections"] -->
+        B["2. scroll_feed<br>Scrape visible posts from x.com/home DOM"] -->
+        C["3. llm_decide<br>LLM decides engagement<br>(Pydantic structured output)"]
+        C -- "reply/quote" --> D["4. hydrate_replies<br>Fetch thread context<br>in new Playwright tab"]
+        C -- "like only" --> E["5. execute_actions<br>Batch actions per post<br>1 tab/post, 3-8s delays"]
+        C -- "none" --> G["6. log_activity"]
+        D --> F["5a. generate_content<br>LLM writes persona text<br>(writing samples, temp 0.8)"]
+        F --> E
+        E --> G["6. log_activity<br>Write activity-log.md<br>Update rate-limits.json"]
+        G --> H["7. follow_decision<br>Score follow candidates<br>(topic overlap, quality)"]
+        H --> I["8. state_cleansing<br>Clear per-cycle<br>state fields"]
+        I --> J["9. scroll_page<br>Smooth scroll 3x viewport<br>Wait 5-15s random"]
+    end
+
+    subgraph External["🌐 External Systems"]
+        LLM["LLM Provider<br>OpenAI / Anthropic"]
+        BROWSER["Playwright Chromium<br>headless by default (--visible)"]
+        X["x.com / Twitter"]
+        FILES["Filesystem<br>persona-struct.md<br>activity-log.md<br>rate-limits.json<br>writing samples"]
+    end
+
+    LOOP --> A
+    J --> LOOP
+    LLM -.-> C
+    LLM -.-> F
+    BROWSER -.-> B
+    BROWSER -.-> D
+    BROWSER -.-> E
+    BROWSER -.-> J
+    X -.-> BROWSER
+    FILES -.-> A
+    FILES -.-> G
+    FILES -.-> F
+```
+
 ## Quick Start
 
 ### 1. Setup
