@@ -24,7 +24,7 @@ x-persona/
 ├── DOC.md                        # Technical documentation
 ├── pyproject.toml                # Project configurations and dependencies
 ├── uv.lock                       # Lockfile mapping exact dependencies
-├── src/
+├── x_personas/
 │   ├── generate_persona.py       # Helper to generate filled-out persona-struct.md from raw post logs
 │   ├── models/                   # Pydantic data models
 │   │   ├── __init__.py
@@ -162,7 +162,7 @@ By running with the `--ask` CLI flag, you enable the interactive approval gate. 
 ### Dry-Run Verification (`--dry-run`)
 To verify LLM alignment without spinning up any automated browser sessions, you can run:
 ```bash
-uv run python -m src.agent.runner --persona persona-struct.md --dry-run
+uv run python -m x_personas.agent.runner --persona persona-struct.md --dry-run
 ```
 This feeds a set of mock posts representing different topics (tech, random posts, personal milestones) to the decision prompt and showcases how the LLM structures its actions, scores, and explanations in the terminal.
 
@@ -184,11 +184,11 @@ Fill in the appropriate API keys for your preferred LLM provider (DashScope/Qwen
 ### 3. Run Commands
 ```bash
 # Verify parsing and LLM choices using dummy data
-uv run python -m src.agent.runner --persona persona-struct.md --dry-run
+uv run python -m x_personas.agent.runner --persona persona-struct.md --dry-run
 
 # Run headed with manual approval gate (recommended for initial setup)
-uv run python -m src.agent.runner --persona persona-struct.md --visible --ask
+uv run python -m x_personas.agent.runner --persona persona-struct.md --visible --ask
 
 # Run completely headless and autonomous
-uv run python -m src.agent.runner --persona persona-struct.md
+uv run python -m x_personas.agent.runner --persona persona-struct.md
 ```

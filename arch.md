@@ -3,7 +3,7 @@
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                     PERSONA GENERATOR                       │
-│                    src/generate_persona.py                  │
+│                    x_personas/generate_persona.py                  │
 │                                                            │
 │  Raw scraped posts/replies  ──►  LLM analyzes patterns ──►  │
 │  from a real X account          (tone, topics, slang,       │
@@ -15,7 +15,7 @@
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                     AUTONOMOUS AGENT                          │
-│                        src/agent/                            │
+│                     x_personas/agent/                         │
 │                                                              │
 │  ┌──────────────┐                                            │
 │  │ load_persona  │  (no-op if already loaded)                │
@@ -186,7 +186,8 @@ cycle state, and loops back.
 ## Directory layout
 
 ```
-src/
+x_personas/
+├── __init__.py                    # Package root
 ├── prompts/                       # LLM prompt templates
 │   ├── llm_decide_system.md       # System prompt for engagement decisions
 │   └── llm_decide_user.md         # User prompt template with feed posts
@@ -261,7 +262,7 @@ Every navigation and new tab load calls `detect_current_page(page: Page) -> str`
 
 ## Prompt templates
 
-All prompt templates are in `src/prompts/`:
+All prompt templates are in `x_personas/prompts/`:
 
 - **`llm_decide_system.md`**: Dynamic prompt filled with `{persona_sections}` capturing stances, rules, thresholds, and profiles.
 - **`llm_decide_user.md`**: Filled dynamically with `{feed_posts}`.
