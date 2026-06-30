@@ -43,6 +43,9 @@ Thumbs.db
 # Local X Personas Activity Logs, Rate limits, and Scratch files
 scratch/
 *_personality.md
+.rate-limits-*.json
+learning-map.md
+ref-persona.md
 
 # Persona data directories (each persona is user data — preserve the template dir)
 personas/*/
