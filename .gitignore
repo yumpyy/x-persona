@@ -41,15 +41,12 @@ Thumbs.db
 .ipynb_checkpoints/
 
 # Local X Personas Activity Logs, Rate limits, and Scratch files
-*-activity-log.md
-.rate-limits-*.json
 scratch/
 *_personality.md
 
-# Custom persona structures & raw scrapings (preserve the template file)
-*-struct.md
-*-persona.md
-!persona-struct.md
+# Persona data directories (each persona is user data — preserve the template dir)
+personas/*/
+!personas/_template/
 
 # Scraped raw profile lists, playbooks & todos
 profiles.md
