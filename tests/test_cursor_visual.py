@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils.browser import BrowserSession
-from src.utils.mouse import smooth_click, smooth_move, ensure_cursor_overlay, trigger_click_effect
+from x_personas.utils.browser import BrowserSession
+from x_personas.utils.mouse import smooth_click, smooth_move, ensure_cursor_overlay, trigger_click_effect
 
 
 async def run_visual_test():

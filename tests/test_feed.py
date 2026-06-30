@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils.browser import BrowserSession
-from src.utils.feed import get_home_feed
+from x_personas.utils.browser import BrowserSession
+from x_personas.utils.feed import get_home_feed
 
 
 def _fmt(n: int | None) -> str:

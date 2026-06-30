@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agent.nodes.generate_content import generate_content
-from src.agent.nodes.llm_decide import llm_decide
-from src.models.engagement import ActionType, EngagementDecisions, PendingAction, PostDecision, GeneratedText
-from src.models.feed import FeedPost, PostMetrics
-from src.models.post import PostData, Reply
+from x_personas.agent.nodes.generate_content import generate_content
+from x_personas.agent.nodes.llm_decide import llm_decide
+from x_personas.models.engagement import ActionType, EngagementDecisions, PendingAction, PostDecision, GeneratedText
+from x_personas.models.feed import FeedPost, PostMetrics
+from x_personas.models.post import PostData, Reply
 
 
 async def test_multimodal_llm_decide():
@@ -31,6 +31,7 @@ async def test_multimodal_llm_decide():
         "feed_posts": [post],
         "engaged_ids": [],
         "llm_config": {},
+        "vlm_config": {"model": "gpt-4o"},
         "rate_limit_file": "",
     }
 
@@ -43,8 +44,8 @@ async def test_multimodal_llm_decide():
         PostDecision(action_type=["like", "reply"], target_status_id="111", target_handle="original", score=8.5, reason="cool tractor")
     ])
 
-    with patch("src.agent.nodes.llm_decide.get_llm") as mock_get_llm, \
-         patch("src.agent.nodes.llm_decide._load_template") as mock_load:
+    with patch("x_personas.agent.nodes.llm_decide.get_llm") as mock_get_llm, \
+         patch("x_personas.agent.nodes.llm_decide._load_template") as mock_load:
         mock_get_llm.return_value = mock_llm
         mock_load.return_value = "System template {persona_sections}"
 
@@ -100,6 +101,7 @@ async def test_multimodal_generate_content():
         "pending_actions": [action],
         "source_data_files": [],
         "llm_config": {},
+        "vlm_config": {"model": "gpt-4o"},
         "thread_contexts": thread_contexts,
     }
 
@@ -109,7 +111,7 @@ async def test_multimodal_generate_content():
     
     mock_structured.invoke.return_value = GeneratedText(text="sundar kothi h")
 
-    with patch("src.agent.nodes.generate_content.get_llm") as mock_get_llm:
+    with patch("x_personas.agent.nodes.generate_content.get_llm") as mock_get_llm:
         mock_get_llm.return_value = mock_llm
         
         result = await generate_content(state)

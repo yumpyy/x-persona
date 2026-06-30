@@ -6,12 +6,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agent.nodes.load_persona import load_persona
-from src.agent.nodes.llm_decide import _build_feed_text, _build_persona_text, _decisions_to_pending
-from src.agent.rate_limiter import RateLimitState, cycle_caps, scroll_delay, action_delay
-from src.agent.history import load_engaged_status_ids
-from src.models.engagement import ActionType, EngagementDecisions, PostDecision
-from src.models.feed import FeedPost
+from x_personas.agent.nodes.load_persona import load_persona
+from x_personas.agent.nodes.llm_decide import _build_feed_text, _build_persona_text, _decisions_to_pending
+from x_personas.agent.rate_limiter import RateLimitState, cycle_caps, scroll_delay, action_delay
+from x_personas.agent.history import load_engaged_status_ids
+from x_personas.models.engagement import ActionType, EngagementDecisions, PostDecision
+from x_personas.models.feed import FeedPost
 from datetime import datetime, timezone
 import json, os, tempfile
 
@@ -31,7 +31,7 @@ def _make_post(status_id: str, handle: str, text: str, hours_ago: int = 0) -> Fe
 
 
 def test_persona_parsing():
-    persona_file = "purusha-persona-struct.md"
+    persona_file = "personas/purusa0x6c/persona.md"
     assert Path(persona_file).exists(), f"{persona_file} not found"
     state = load_persona({
         "persona_file": persona_file, "activity_log_file": "", "llm_config": {},
@@ -252,8 +252,8 @@ def test_load_persona_empty_file():
 
 
 def test_recent_engagements_loading():
-    from src.agent.history import load_recent_engagements
-    from src.agent.nodes.llm_decide import _build_recent_engagements_text
+    from x_personas.agent.history import load_recent_engagements
+    from x_personas.agent.nodes.llm_decide import _build_recent_engagements_text
 
     with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w") as f:
         f.write("| timestamp | action | target | content | score | context |\n")
@@ -278,7 +278,7 @@ def test_recent_engagements_loading():
 
 
 def test_critique_variety_filters():
-    from src.agent.nodes.llm_decide import _is_critical_engagement, _is_critical_decision, PostDecision
+    from x_personas.agent.nodes.llm_decide import _is_critical_engagement, _is_critical_decision, PostDecision
 
     disliked = ["bootcamp", "grind"]
 
@@ -301,7 +301,7 @@ def test_critique_variety_filters():
 
 
 def test_generate_original_post():
-    from src.agent.nodes.generate_content import generate_original_post
+    from x_personas.agent.nodes.generate_content import generate_original_post
     assert generate_original_post is not None
     print(f"  \u2713 generate_original_post utility: import and signature verified")
 

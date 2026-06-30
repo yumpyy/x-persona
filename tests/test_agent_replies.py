@@ -8,11 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agent.nodes.generate_content import generate_content, _extract_mutual_handles
-from src.agent.nodes.hydrate_replies import hydrate_replies
-from src.models.engagement import ActionType, PendingAction, GeneratedText
-from src.models.feed import PostMetrics
-from src.models.post import PostData, Reply
+from x_personas.agent.nodes.generate_content import generate_content, _extract_mutual_handles
+from x_personas.agent.nodes.hydrate_replies import hydrate_replies
+from x_personas.models.engagement import ActionType, PendingAction, GeneratedText
+from x_personas.models.feed import PostMetrics
+from x_personas.models.post import PostData, Reply
 
 
 def test_mutual_handles_extraction():
@@ -72,7 +72,7 @@ async def test_hydrate_replies_node():
     config = {"configurable": {"browser_context": mock_ctx}}
 
     # Patch get_post_data to return mock_post
-    with patch("src.agent.nodes.hydrate_replies.get_post_data", new_callable=AsyncMock) as mock_get:
+    with patch("x_personas.agent.nodes.hydrate_replies.get_post_data", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_post
         result = await hydrate_replies(state, config)
         
@@ -157,7 +157,7 @@ async def test_generate_content_chaining_and_deduplication():
         GeneratedText(text="[SKIP]"),          # Action2 returns SKIP
     ]
 
-    with patch("src.agent.nodes.generate_content.get_llm") as mock_get_llm:
+    with patch("x_personas.agent.nodes.generate_content.get_llm") as mock_get_llm:
         mock_get_llm.return_value = mock_llm
         
         result = await generate_content(state)

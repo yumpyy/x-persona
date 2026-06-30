@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils.browser import BrowserSession
-from src.utils.post import get_post_data
+from x_personas.utils.browser import BrowserSession
+from x_personas.utils.post import get_post_data
 
 
 async def main():
