@@ -434,12 +434,34 @@ async def run_once(
     )
 
 
+def _init_persona(name: str) -> None:
+    target = Path("personas") / name
+    if target.exists():
+        print(f"Persona directory already exists: {target}", file=sys.stderr)
+        sys.exit(1)
+    target.mkdir(parents=True)
+    source_dir = target / "source"
+    source_dir.mkdir()
+    activity_log = target / "activity-log.md"
+    activity_log.touch()
+    tmpl = Path("personas/_template/persona.md")
+    if tmpl.exists():
+        (target / "persona.md").write_text(tmpl.read_text())
+    print(f"Created persona '{name}' at {target}/")
+    print(f"  persona.md   — edit this with persona identity & behavior")
+    print(f"  source/      — place raw scraped data here")
+    print(f"  activity-log.md — engagement history (auto-managed)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="X Personas LangGraph Agent")
     parser.add_argument(
         "--persona",
-        required=True,
-        help="Persona name (resolves to personas/<name>/persona.md) or explicit path to persona.md file",
+        help="Persona name (resolves to personas/<name>/persona.md) or explicit path to persona.md file (not needed with --init-persona)",
+    )
+    parser.add_argument(
+        "--init-persona",
+        help="Create a new persona directory from the template and exit",
     )
     parser.add_argument(
         "--dry-run",
@@ -493,6 +515,13 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if args.init_persona:
+        _init_persona(args.init_persona)
+        return
+
+    if not args.persona:
+        parser.error("the following arguments are required: --persona")
 
     set_quiet(args.quiet)
 
