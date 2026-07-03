@@ -40,7 +40,7 @@ class PersonaDetail(Screen):
             with Vertical(id="detail-left"):
                 yield DataTable(id="detail-activity", cursor_type="row")
                 yield HeightSplitter(target_widget=None, min_height=5, max_height=40)
-                yield RichLog(id="detail-log", highlight=True, markup=True, max_lines=8)
+                yield RichLog(id="detail-log", highlight=True, markup=True)
             yield WidthSplitter(target_widget=None, min_width=15, max_width=60)
             with Vertical(id="detail-right"):
                 yield Static(id="detail-right-content")

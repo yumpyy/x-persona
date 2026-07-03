@@ -22,8 +22,8 @@ class HistoryBrowser(ModalScreen):
             Horizontal(
                 Input(placeholder="Search text...", id="history-search"),
                 Select(
-                    [("all", "All"), ("like", "Like"), ("reply", "Reply"), ("repost", "Repost"), ("quote", "Quote"),
-                     ("original_post", "Original")],
+                    [("All", "all"), ("Like", "like"), ("Reply", "reply"), ("Repost", "repost"), ("Quote", "quote"),
+                     ("Original Post", "original_post")],
                     value="all",
                     id="history-filter",
                     allow_blank=False,
