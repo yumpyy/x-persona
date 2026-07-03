@@ -204,6 +204,7 @@ async def generate_original_post(
     llm_config: dict[str, Any],
     time_of_day: str,
     recent_posts: list[str],
+    prompt: str = "",
 ) -> str:
     """Generate a completely new original standalone tweet conforming to the persona's content buckets, tone rules, current time of day, and recent posting history."""
     creative_config = dict(llm_config)
@@ -228,7 +229,8 @@ async def generate_original_post(
         "It must not be a reply or a quote. It must be a new post representing one of your content buckets:\n"
         f"{buckets_text}\n"
         f"{recent_text}\n"
-        "GUIDELINES FOR TIME-OF-DAY, DIVERSITY, AND CONTINUITY:\n"
+        + (f"USER TOPIC GUIDANCE: {prompt}\n\n" if prompt else "")
+        + "GUIDELINES FOR TIME-OF-DAY, DIVERSITY, AND CONTINUITY:\n"
         "- TIME-OF-DAY ALIGNMENT: Align the theme of your post with the time of day. For example, morning tweets might touch on morning routines, early starts, or starting the day; afternoon/evening tweets on core daytime topics, professional work, or daytime hobbies; and late-night tweets on late-night thoughts, winding down, or reflections.\n"
         "- CONTINUITY: Read your recent original posts above. If you recently posted about an ongoing activity, project, book, or hobby, you may post a continuation (e.g., progress update, new discovery, or next step) to maintain natural narrative threads.\n"
         "- DIVERSITY: Choose a topic or bucket that is DIFFERENT from your most recent post to keep your feed interesting and cover all aspects of your defined persona (e.g., balance professional, hobby, and personal thoughts if applicable).\n\n"
