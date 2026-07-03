@@ -11,10 +11,12 @@ dependencies = [
     "langchain-core>=0.3.0",
     "langchain-openai>=0.3.0",
     "python-dotenv>=1.1.0",
+    "textual>=2.0.0",
 ]
 
 [project.scripts]
 x-personas = "x_personas.agent.runner:main"
+x-personas-tui = "x_personas.tui.__main__:main"
 generate-persona = "x_personas.generate_persona:main"
 
 [build-system]
