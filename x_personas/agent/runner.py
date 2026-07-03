@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import os
 import random
 import sys
@@ -19,6 +20,7 @@ from x_personas.agent.rate_limiter import cycle_caps
 from x_personas.models.feed import FeedPost
 from x_personas.utils.browser import BrowserSession
 from x_personas.utils.feed import navigate_home
+from x_personas.utils.mouse import start_cursor_idle
 
 load_dotenv()
 
@@ -222,6 +224,10 @@ async def run_perpetual(
         await navigate_home(home_page)
         print(f"  Navigated to x.com/home (scroll_limit={scroll_limit}, headless={headless})")
 
+        if os.getenv("DISABLE_CURSOR") != "true":
+            from x_personas.utils.mouse import ensure_cursor_overlay
+            await ensure_cursor_overlay(home_page)
+
         # --- Dynamic Logged-in Username & Live Stats Sync ---
         logged_in_handle = None
         try:
@@ -265,11 +271,14 @@ async def run_perpetual(
                 print(f"  Successfully scraped profile: {stats.display_name} (@{stats.handle})")
                 print(f"  Followers: {stats.followers} | Following: {stats.following} | Posts: {stats.posts_count} | Verified: {stats.verified}")
                 
-                # Check for profile bio updates
-                clean_configured_bio = configured_bio.replace("<br>", "\n").strip()
-                clean_scraped_bio = stats.bio.strip()
+                # Check for profile bio updates (only sync once)
+                clean_configured_bio = configured_bio.replace("<br>", "\n").strip()[:160]
+                clean_scraped_bio = stats.bio.strip()[:160]
+                bio_marker = persona_path.parent / f".bio-synced-{persona_path.stem}"
+                bio_hash = hashlib.md5(clean_configured_bio.encode()).hexdigest() if clean_configured_bio else ""
+                bio_already_synced = bio_marker.exists() and bio_marker.read_text().strip() == bio_hash
                 
-                if clean_configured_bio and clean_configured_bio != clean_scraped_bio:
+                if clean_configured_bio and not bio_already_synced and clean_configured_bio != clean_scraped_bio:
                     print(f"👤 [Startup] Bio mismatch detected. Local: \"{clean_configured_bio}\" vs X.com: \"{clean_scraped_bio}\".")
                     print(f"🔄 Updating profile bio on X.com...")
                     from x_personas.utils.edit_profile import edit_profile
@@ -277,6 +286,7 @@ async def run_perpetual(
                     if res.success:
                         print("✅ Profile bio successfully updated on X.com!")
                         stats.bio = clean_configured_bio
+                        bio_marker.write_text(bio_hash)
                     else:
                         print(f"❌ Failed to update profile bio on X.com: {res.error}")
 
@@ -300,6 +310,12 @@ async def run_perpetual(
             print("⚠️  Could not detect logged-in username from the current session.")
 
         graph = create_graph()
+        cursor_pause_event = asyncio.Event()
+        cursor_pause_event.set()
+        cursor_task = None
+        if os.getenv("DISABLE_CURSOR") != "true":
+            cursor_task = asyncio.create_task(start_cursor_idle(home_page, cursor_pause_event))
+
         config = {
             "configurable": {
                 "thread_id": persona_name,
@@ -308,6 +324,7 @@ async def run_perpetual(
                 "llm_config": llm_config,
                 "vlm_config": vlm_config,
                 "ask": ask,
+                "cursor_pause_event": cursor_pause_event,
             }
         }
 
@@ -328,95 +345,96 @@ async def run_perpetual(
         print(f"📊 [Original Post Scheduler] Loaded {session_engagements} engagements since last original post from history.")
         print(f"🎲 [Original Post Scheduler] Target engagements for next original tweet: {target_original_post_count}")
 
-        cycle = 0
-        while True:
-            cycle += 1
-            log(f"\u2550\u2550\u2550 cycle {cycle} \u2550\u2550\u2550")
-            result = await graph.ainvoke(state, config)
-            state.update(result)
+        try:
+            cycle = 0
+            while True:
+                cycle += 1
+                log(f"\u2550\u2550\u2550 cycle {cycle} \u2550\u2550\u2550")
+                result = await graph.ainvoke(state, config)
+                state.update(result)
 
-            sc = state.get("scroll_count", 0)
-            new_posts = result.get("feed_posts", [])
-            pending = result.get("pending_actions", [])
-            executed = result.get("executed_actions", [])
-            log(f"cycle {cycle}: scrolls={sc} new_posts={len(new_posts)} pending={len(pending)} executed={len(executed)}")
+                sc = state.get("scroll_count", 0)
+                new_posts = result.get("feed_posts", [])
+                pending = result.get("pending_actions", [])
+                executed = result.get("executed_actions", [])
+                log(f"cycle {cycle}: scrolls={sc} new_posts={len(new_posts)} pending={len(pending)} executed={len(executed)}")
 
-            successful_engagements = [a for a in executed if a.success]
-            if successful_engagements:
-                session_engagements += len(successful_engagements)
-                print(f"📈 [Original Post Scheduler] Session engagements: {session_engagements}/{target_original_post_count}")
+                successful_engagements = [a for a in executed if a.success]
+                if successful_engagements:
+                    session_engagements += len(successful_engagements)
+                    print(f"📈 [Original Post Scheduler] Session engagements: {session_engagements}/{target_original_post_count}")
 
-            if session_engagements >= target_original_post_count:
-                print("\n📝 [Original Post Scheduler] Triggered! Composing a brand new original post...")
-                try:
-                    from x_personas.agent.nodes.generate_content import generate_original_post
-                    from x_personas.utils.post import post
-                    from x_personas.agent.history import load_recent_original_posts
-                    from datetime import datetime, timezone
+                if session_engagements >= target_original_post_count:
+                    print("\n📝 [Original Post Scheduler] Triggered! Composing a brand new original post...")
+                    try:
+                        from x_personas.agent.nodes.generate_content import generate_original_post
+                        from x_personas.utils.post import post
+                        from x_personas.agent.history import load_recent_original_posts
+                        from datetime import datetime, timezone
 
-                    # Resolve time of day
-                    hour = datetime.now().hour
-                    if 5 <= hour < 12:
-                        time_of_day = "Morning"
-                    elif 12 <= hour < 20:
-                        time_of_day = "Afternoon/Evening"
-                    else:
-                        time_of_day = "Late Night"
-
-                    # Load recent original posts
-                    recent_posts = load_recent_original_posts(activity_log, limit=5)
-                    print(f"📖 Loaded {len(recent_posts)} recent original posts from memory")
-
-                    tweet_text = await generate_original_post(
-                        state["persona_sections"],
-                        llm_config,
-                        time_of_day,
-                        recent_posts
-                    )
-                    print(f"✨ [Original Post Scheduler] Generated text ({time_of_day}): \"{tweet_text}\"")
-
-                    if ask:
-                        ans = input("Confirm publishing original post? [Y/n]: ").strip().lower()
-                        if ans and ans != "y":
-                            print("❌ Skipped original post publication.")
-                            tweet_text = ""
-
-                    if tweet_text:
-                        print("🚀 Publishing original post key-by-key...")
-                        resp = await post(ctx, tweet_text)
-                        if resp.success:
-                            print("✅ Original post successfully published!")
-                            # Manually append to the activity log table so we have memory of it!
-                            ts_str = datetime.now(timezone.utc).isoformat()
-                            entry = f"| {ts_str} | original_post | self | {tweet_text} | 10.0 | Standalone original tweet published [{time_of_day}]. |"
-                            with open(activity_log, "a", encoding="utf-8") as f:
-                                f.write(entry + "\n")
+                        hour = datetime.now().hour
+                        if 5 <= hour < 12:
+                            time_of_day = "Morning"
+                        elif 12 <= hour < 20:
+                            time_of_day = "Afternoon/Evening"
                         else:
-                            print(f"❌ Failed to publish original post: {resp.error}")
-                except Exception as ex:
-                    print(f"⚠️ Error in original post scheduler: {ex}")
+                            time_of_day = "Late Night"
 
-                session_engagements = 0
-                target_original_post_count = random.randint(10, 20)
-                print(f"🎲 Next original post target set to: {target_original_post_count} engagements\n")
+                        recent_posts = load_recent_original_posts(activity_log, limit=5)
+                        print(f"📖 Loaded {len(recent_posts)} recent original posts from memory")
 
-            if once:
-                print("\n  [Once] Cycle completed. Exiting as requested by --once.")
-                break
+                        tweet_text = await generate_original_post(
+                            state["persona_sections"],
+                            llm_config,
+                            time_of_day,
+                            recent_posts
+                        )
+                        print(f"✨ [Original Post Scheduler] Generated text ({time_of_day}): \"{tweet_text}\"")
 
-            if scroll_limit > 0 and sc >= scroll_limit:
-                break_duration = random.randint(600, 1800)
-                print(f"\n  Scroll limit ({scroll_limit}) reached. Taking {break_duration}s break...")
-                await asyncio.sleep(break_duration)
+                        if ask:
+                            ans = input("Confirm publishing original post? [Y/n]: ").strip().lower()
+                            if ans and ans != "y":
+                                print("❌ Skipped original post publication.")
+                                tweet_text = ""
 
-                await navigate_home(home_page)
-                print("  Re-navigated to x.com/home")
+                        if tweet_text:
+                            print("🚀 Publishing original post key-by-key...")
+                            resp = await post(ctx, tweet_text)
+                            if resp.success:
+                                print("✅ Original post successfully published!")
+                                ts_str = datetime.now(timezone.utc).isoformat()
+                                entry = f"| {ts_str} | original_post | self | {tweet_text} | 10.0 | Standalone original tweet published [{time_of_day}]. |"
+                                with open(activity_log, "a", encoding="utf-8") as f:
+                                    f.write(entry + "\n")
+                            else:
+                                print(f"❌ Failed to publish original post: {resp.error}")
+                    except Exception as ex:
+                        print(f"⚠️ Error in original post scheduler: {ex}")
 
-                state["scroll_count"] = 0
-                engaged_ids = list(load_engaged_status_ids(activity_log))
-                state["engaged_ids"] = engaged_ids
-                state["seen_post_ids"] = []
-                print(f"  Engaged posts on record: {len(engaged_ids)}")
+                    session_engagements = 0
+                    target_original_post_count = random.randint(10, 20)
+                    print(f"🎲 Next original post target set to: {target_original_post_count} engagements\n")
+
+                if once:
+                    print("\n  [Once] Cycle completed. Exiting as requested by --once.")
+                    break
+
+                if scroll_limit > 0 and sc >= scroll_limit:
+                    break_duration = random.randint(600, 1800)
+                    print(f"\n  Scroll limit ({scroll_limit}) reached. Taking {break_duration}s break...")
+                    await asyncio.sleep(break_duration)
+
+                    await navigate_home(home_page)
+                    print("  Re-navigated to x.com/home")
+
+                    state["scroll_count"] = 0
+                    engaged_ids = list(load_engaged_status_ids(activity_log))
+                    state["engaged_ids"] = engaged_ids
+                    state["seen_post_ids"] = []
+                    print(f"  Engaged posts on record: {len(engaged_ids)}")
+        finally:
+            if cursor_task is not None:
+                cursor_task.cancel()
 
 
 async def run_once(
@@ -453,8 +471,43 @@ def _init_persona(name: str) -> None:
     print(f"  activity-log.md — engagement history (auto-managed)")
 
 
+def _tui_main(args_list: list[str] | None = None) -> None:
+    """Launch the Textual TUI."""
+    from x_personas.tui.app import XPersonasTUI
+
+    parser = argparse.ArgumentParser(description="X-Personas Textual TUI")
+    parser.add_argument(
+        "--persona", action="append", default=None,
+        help="Persona name(s) to load (default: auto-discover personas/)",
+    )
+    parser.add_argument(
+        "--visible", action="store_true", default=False,
+        help="Show browser window (default: headless)",
+    )
+    tui_args = parser.parse_args(args_list)
+    app = XPersonasTUI(
+        filter_personas=tui_args.persona,
+        headless=not tui_args.visible,
+    )
+    app.run()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="X Personas LangGraph Agent")
+    sub = parser.add_subparsers(dest="command", help="Subcommands: tui | run (default)")
+
+    # TUI subcommand
+    tui_p = sub.add_parser("tui", help="Launch Textual TUI")
+    tui_p.add_argument(
+        "--persona", action="append", default=None,
+        help="Persona name(s) to load (default: auto-discover personas/)",
+    )
+    tui_p.add_argument(
+        "--visible", action="store_true", default=False,
+        help="Show browser window (default: headless)",
+    )
+
+    # Original args (kept as defaults when no subcommand)
     parser.add_argument(
         "--persona",
         help="Persona name (resolves to personas/<name>/persona.md) or explicit path to persona.md file (not needed with --init-persona)",
@@ -516,12 +569,18 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Route subcommands
+    if args.command == "tui":
+        _tui_main(sys.argv[sys.argv.index("tui") + 1:])
+        return
+
+    # Default (no subcommand) — original headless CLI
     if args.init_persona:
         _init_persona(args.init_persona)
         return
 
     if not args.persona:
-        parser.error("the following arguments are required: --persona")
+        parser.error("the following arguments are required: --persona (or use 'x-personas tui')")
 
     set_quiet(args.quiet)
 
