@@ -9,6 +9,7 @@ from pathlib import Path
 
 from textual.app import App
 from textual.binding import Binding
+from textual import events
 from textual.widgets import Static, Input
 
 from x_personas.tui.store import TUIStore, PersonaRuntimeInfo
@@ -106,6 +107,22 @@ class XPersonasTUI(App):
             info.error_message = error
             info.status = "error"
             self.refresh_all()
+
+    def on_key(self, event: events.Key) -> None:
+        if not self.ask_mode or self._ask_worker is None:
+            return
+        if event.key == "y":
+            self._ask_worker.resolve_ask(True)
+            self._hide_ask()
+            event.stop()
+        elif event.key == "n":
+            self._ask_worker.resolve_ask(False)
+            self._hide_ask()
+            event.stop()
+        elif event.key == "escape":
+            self._ask_worker.resolve_ask(False)
+            self._hide_ask()
+            event.stop()
 
     # ── Persona lifecycle ──
 
