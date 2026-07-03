@@ -1,0 +1,176 @@
+/* ── X-Personas TUI — Catppuccin Mocha ── */
+
+Screen {
+    background: #1e1e2e;
+}
+
+/* ===== HEADER ===== */
+#header {
+    dock: top;
+    height: 1;
+    background: #313244;
+    color: #cdd6f4;
+}
+
+/* ===== FOOTER ===== */
+#footer {
+    dock: bottom;
+    height: 1;
+    background: #181825;
+    color: #a6adc8;
+}
+
+#footer > Static {
+    padding: 0 1;
+}
+
+#compose-prompt-input {
+    height: 3;
+    background: #181825;
+    border: none;
+    color: #cdd6f4;
+}
+
+/* ===== DASHBOARD ===== */
+#dash-status {
+    height: 1;
+    color: #a6adc8;
+    padding: 0 1;
+}
+
+#dash-rates {
+    height: 1;
+    color: #cdd6f4;
+    padding: 0 1;
+}
+
+/* ===== DETAIL VIEW ===== */
+#detail-header {
+    height: 1;
+    color: #cdd6f4;
+    padding: 0 1;
+}
+
+#detail-stats {
+    height: 1;
+    color: #a6adc8;
+    padding: 0 1;
+}
+
+#detail-rates {
+    height: 1;
+    color: #cdd6f4;
+    padding: 0 1;
+}
+
+#detail-container {
+    height: 1fr;
+}
+
+#detail-left {
+    height: 100%;
+    width: 1fr;
+}
+
+#detail-right {
+    height: 100%;
+    width: 30;
+    display: none;
+    background: #181825;
+}
+
+#detail-activity {
+    height: 10;
+    border: none;
+}
+
+HeightSplitter {
+    height: 1;
+    width: 1fr;
+    background: #313244;
+    color: #45475a;
+}
+
+HeightSplitter:hover {
+    background: #45475a;
+    color: #585b70;
+}
+
+WidthSplitter {
+    width: 1;
+    height: 1fr;
+    display: none;
+    background: #313244;
+    color: #45475a;
+}
+
+WidthSplitter:hover {
+    background: #45475a;
+    color: #585b70;
+}
+
+#detail-log {
+    height: 1fr;
+    border: none;
+}
+
+#detail-right-content {
+    height: 1fr;
+    color: #cdd6f4;
+    padding: 0 1;
+    overflow-y: auto;
+}
+
+/* ===== DATA TABLES ===== */
+DataTable {
+    border: none;
+    height: 1fr;
+    color: #cdd6f4;
+}
+
+DataTable > .datatable--header {
+    text-style: bold;
+    color: #a6adc8;
+}
+
+DataTable > .datatable--cursor {
+    background: #45475a;
+    color: #cdd6f4;
+}
+
+/* ===== RICH LOG ===== */
+RichLog {
+    border: none;
+    color: #cdd6f4;
+}
+
+/* ===== MODAL SCREENS ===== */
+ModalScreen {
+    align: center middle;
+}
+
+#settings-dialog, #wizard-dialog,
+#intervene-dialog, #editor-dialog {
+    width: 50;
+    height: auto;
+    border: solid #89b4fa;
+    padding: 0 1;
+    background: #1e1e2e;
+}
+
+/* ===== ACTIVITY DETAIL ===== */
+#activity-detail-dialog {
+    width: 60;
+    height: auto;
+    border: solid #89b4fa;
+    padding: 0 1;
+    background: #1e1e2e;
+}
+
+/* ===== GENERIC UTILITY ===== */
+.bold { text-style: bold; }
+.dim { color: #6c7086; }
+.green { color: #a6e3a1; }
+.red { color: #f38ba8; }
+.yellow { color: #f9e2af; }
+.magenta { color: #cba6f7; }
