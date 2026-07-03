@@ -63,3 +63,9 @@ posts.html
 test_like_third_post.py
 test_playwright.py
 
+# Local planning / workspace docs
+AGENTS.md
+DOC.md
+arch.md
+agent_pln.md
+
