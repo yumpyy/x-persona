@@ -21,6 +21,8 @@ async def scroll_feed(state: PersonaState, config=None) -> dict:
             }
         home_page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await navigate_home(home_page)
+        from x_personas.utils.mouse import ensure_cursor_overlay
+        await ensure_cursor_overlay(home_page)
 
     engaged = set(state.get("engaged_ids", []))
     seen = set(state.get("seen_post_ids", []))

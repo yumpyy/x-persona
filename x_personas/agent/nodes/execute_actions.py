@@ -30,6 +30,9 @@ async def execute_actions(state: PersonaState, config=None) -> dict:
 
     configurable = (config or {}).get("configurable", {})
     ctx = configurable.get("browser_context")
+    pause_event = configurable.get("cursor_pause_event")
+    if pause_event is not None:
+        pause_event.clear()
 
     if ctx is None:
         for action in pending:
@@ -132,6 +135,8 @@ async def execute_actions(state: PersonaState, config=None) -> dict:
 
         await asyncio.sleep(action_delay())
 
+    if pause_event is not None:
+        pause_event.set()
     return {
         "executed_actions": executed,
         "pending_actions": [],

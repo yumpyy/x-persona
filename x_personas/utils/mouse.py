@@ -317,21 +317,25 @@ async def smooth_click(page: Page, element_or_selector: str | Locator) -> None:
 
         box = await locator.bounding_box()
         if not box:
-            # Fallback to direct clicking if bounding box not in DOM
             await locator.click()
             return
 
-        # Calculate coordinate center
         target_x = box["x"] + box["width"] / 2
         target_y = box["y"] + box["height"] / 2
 
-        # Execute smooth human glide
         await smooth_move(page, target_x, target_y)
+
+        # Cursor shrink on arrival (simulates finger pressing down)
+        if os.getenv("DISABLE_CURSOR") != "true":
+            try:
+                await page.evaluate(_TARGET_SHRINK_JS, target_x, target_y)
+            except Exception:
+                pass
 
         # Variable human hover delay before clicking
         await asyncio.sleep(random.uniform(0.18, 0.38))
 
-        # Visual click ripple animation
+        # Rich click ripple animation
         await trigger_click_effect(page)
         await asyncio.sleep(0.04)
 
@@ -339,14 +343,28 @@ async def smooth_click(page: Page, element_or_selector: str | Locator) -> None:
         if not page.is_closed():
             await page.mouse.click(target_x, target_y)
         await asyncio.sleep(0.08)
-        
+
     except Exception as e:
         logger.debug("Failed during smooth click: %s", e)
         try:
-            # Final fallback to standard locator click
             await locator.click()
         except Exception:
             pass
+
+
+async def smooth_hover_with_highlight(page: Page, element_or_selector: str | Locator) -> None:
+    """Glide the cursor to an element, highlight it on arrival."""
+    await smooth_hover(page, element_or_selector)
+    try:
+        if isinstance(element_or_selector, str):
+            el = page.locator(element_or_selector).first
+        else:
+            el = element_or_selector
+        article = el.locator("xpath=ancestor::article[@data-testid='tweet']")
+        if await article.count() > 0:
+            await _highlight_article(page, article)
+    except Exception:
+        pass
 
 
 async def smooth_hover(page: Page, element_or_selector: str | Locator) -> None:
@@ -381,3 +399,113 @@ async def smooth_hover(page: Page, element_or_selector: str | Locator) -> None:
             await locator.hover()
         except Exception:
             pass
+
+
+_TARGET_SHRINK_JS = """
+(target_x, target_y) => {
+    const svg = document.getElementById('cursor-svg');
+    if (svg) {
+        svg.style.transform = 'scale(0.85)';
+        svg.style.transition = 'transform 0.08s cubic-bezier(0.16, 1, 0.3, 1)';
+    }
+    setTimeout(() => {
+        if (svg) {
+            svg.style.transform = 'scale(1)';
+            svg.style.transition = 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)';
+        }
+    }, 80);
+}
+"""
+
+
+async def _highlight_article(page: Page, article) -> None:
+    """Briefly flash the article background to simulate visual focus."""
+    try:
+        await page.evaluate("""
+            (article) => {
+                const el = article;
+                const orig = el.style.background;
+                el.style.transition = 'background 0.15s ease';
+                el.style.background = 'rgba(29, 155, 240, 0.06)';
+                setTimeout(() => {
+                    el.style.background = orig || '';
+                }, 350);
+            }
+        """, await article.first.element_handle())
+    except Exception:
+        pass
+
+
+async def _random_post_selector(page: Page) -> str | None:
+    """Return a CSS selector for a random visible tweet article, or None."""
+    try:
+        articles = page.locator('article[data-testid="tweet"]')
+        count = await articles.count()
+        if count == 0:
+            return None
+        idx = random.randrange(count)
+        el = articles.nth(idx)
+        if await el.is_visible():
+            return f'article[data-testid="tweet"]:nth-of-type({idx + 1})'
+        return None
+    except Exception:
+        return None
+
+
+async def _drift_random(page: Page) -> None:
+    """Move cursor to a random visible area of the page so it's never frozen."""
+    try:
+        vp = page.viewport_size
+        if vp is None:
+            return
+        tx = random.uniform(80, vp["width"] - 80)
+        ty = random.uniform(80, vp["height"] - 80)
+        await smooth_move(page, tx, ty)
+    except Exception:
+        pass
+
+
+async def start_cursor_idle(page: Page, pause_event: asyncio.Event) -> None:
+    """Background task: drift cursor randomly over timeline posts while idle.
+
+    Runs until cancelled.  Checks ``pause_event`` — when set, the loop
+    sleeps instead of moving, allowing controlled clicks to take over.
+    """
+    if os.getenv("DISABLE_CURSOR") == "true":
+        return
+
+    while True:
+        try:
+            await pause_event.wait()
+            if page.is_closed():
+                return
+
+            await ensure_cursor_overlay(page)
+
+            selector = await _random_post_selector(page)
+            if selector is None:
+                await _drift_random(page)
+                await asyncio.sleep(random.uniform(1.5, 3.0))
+                continue
+
+            await smooth_hover_with_highlight(page, selector)
+            dwell = random.uniform(1.5, 4.0)
+            await asyncio.sleep(dwell)
+
+            if random.random() < 0.35:
+                btn_sel = f'{selector} [data-testid="{random.choice(["reply", "like"])}"]'
+                btn = page.locator(btn_sel).first
+                if await btn.is_visible():
+                    await smooth_move(page, await _element_center(page, btn))
+                    await asyncio.sleep(random.uniform(0.4, 1.2))
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            await asyncio.sleep(1)
+
+
+async def _element_center(page: Page, locator) -> tuple[float, float]:
+    box = await locator.bounding_box()
+    if box is None:
+        return 0.0, 0.0
+    return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
