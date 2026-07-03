@@ -7,6 +7,7 @@ _NORMAL = (
     "[#6c7086]S[/] Start/Stop  "
     "[#6c7086]K[/] Kill  "
     "[#6c7086]I[/] Intervene  "
+    "[#6c7086]E[/] Settings  "
     "[#6c7086]R[/] Refresh  "
     "[#6c7086]Tab[/] Cycle  "
     "[#6c7086]O[/] Compose  "
@@ -25,18 +26,34 @@ _COMPOSE = (
 
 _PROMPT_LABEL = "[#89b4fa bold]PROMPT[/]  "
 
+_ASK_DECIDE = (
+    "[#f9e2af bold]APPROVAL[/]  "
+    "[#a6e3a1]Y[/] Allow  "
+    "[#f38ba8]N[/] Deny  "
+    "[#6c7086]Esc[/] Cancel"
+)
+
 
 class HelpBar(Static):
-    """Single-line footer — toggles between normal, compose, and prompt mode."""
+    """Single-line footer — toggles between normal, compose, prompt, and ask mode."""
 
     def __init__(self) -> None:
         super().__init__(_NORMAL, id="footer")
         self._compose_mode = False
+        self._ask_mode = False
         self._prompt_input: Input | None = None
 
     def set_compose_mode(self, on: bool) -> None:
         self._compose_mode = on
         self.update(_COMPOSE if on else _NORMAL)
+
+    def show_ask(self) -> None:
+        self._ask_mode = True
+        self.update(_ASK_DECIDE)
+
+    def hide_ask(self) -> None:
+        self._ask_mode = False
+        self.update(_COMPOSE if self._compose_mode else _NORMAL)
 
     def show_prompt(self, placeholder: str = "What should I post about?") -> Input:
         self.styles.height = "auto"

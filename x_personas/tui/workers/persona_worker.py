@@ -25,18 +25,23 @@ class PersonaWorker:
         on_status,
         on_stats,
         on_error,
+        on_ask=None,
     ) -> None:
         self.info = persona_info
         self.settings = settings
         self._on_status = on_status
         self._on_stats = on_stats
         self._on_error = on_error
+        self._on_ask = on_ask
 
         self._running = False
         self._graph = None
         self._browser = None
         self._state: dict = {}
         self._command_queue: asyncio.Queue = asyncio.Queue()
+
+        self._ask_response: bool = False
+        self._ask_event: asyncio.Event = asyncio.Event()
 
     def _push_log(self, msg: str) -> None:
         self.info.log_queue.put_nowait(msg)
@@ -85,13 +90,13 @@ class PersonaWorker:
             log(f"Found {len(engaged_ids)} previously engaged posts")
 
             async with BrowserSession(
-                headless=self.settings.headless,
+                headless=self.info.headless,
                 executable_path=self.settings.browser_path,
                 auth_state_path=auth_file,
             ) as ctx:
                 home_page = ctx.pages[0] if ctx.pages else await ctx.new_page()
                 await navigate_home(home_page)
-                log(f"Navigated to x.com/home (headless={self.settings.headless})")
+                log(f"Navigated to x.com/home (headless={self.info.headless}, ask={self.info.ask})")
 
                 graph = create_graph()
                 config = {
@@ -101,7 +106,7 @@ class PersonaWorker:
                         "home_page": home_page,
                         "llm_config": llm_config,
                         "vlm_config": vlm_config,
-                        "ask": self.settings.approval_mode,
+                        "ask": self.info.ask,
                     }
                 }
 
@@ -220,6 +225,12 @@ class PersonaWorker:
             log(f"Generated: \"{tweet_text}\"")
 
             if tweet_text:
+                if self.info.ask:
+                    ok = await self._request_approval(f"Publish original post?\n\"{tweet_text[:80]}...\"")
+                    if not ok:
+                        log("Original post skipped (denied)")
+                        return
+
                 resp = await post(ctx, tweet_text)
                 if resp.success:
                     log("Original post published!")
@@ -235,6 +246,21 @@ class PersonaWorker:
 
     def send_command(self, cmd_type: str) -> None:
         self._command_queue.put_nowait({"type": cmd_type})
+
+    async def _request_approval(self, description: str) -> bool:
+        """Block until the TUI user confirms or denies an action. Returns True to proceed."""
+        if not self.info.ask or self._on_ask is None:
+            return True
+        self._ask_response = False
+        self._ask_event.clear()
+        self._on_ask(self, description)
+        await self._ask_event.wait()
+        return self._ask_response
+
+    def resolve_ask(self, approved: bool) -> None:
+        """Called by the TUI when user presses Y or N."""
+        self._ask_response = approved
+        self._ask_event.set()
 
     async def _handle_command(self, cmd: dict, ctx, llm_config) -> None:
         from x_personas.agent.log import log

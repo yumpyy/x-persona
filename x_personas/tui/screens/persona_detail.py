@@ -215,7 +215,10 @@ class PersonaDetail(Screen):
         self._next_persona()
 
     def key_escape(self) -> None:
-        if self.app.compose_prompt_mode:
+        if self.app.ask_mode:
+            self.app._ask_worker.resolve_ask(False)
+            self.app._hide_ask()
+        elif self.app.compose_prompt_mode:
             self.app._hide_prompt()
             self.app._update_footer()
         elif self.app.compose_mode:
@@ -224,6 +227,22 @@ class PersonaDetail(Screen):
             self._hide_detail()
         else:
             self.app.pop_screen()
+
+    def key_y(self) -> None:
+        if self.app.ask_mode and self.app._ask_worker:
+            self.app._ask_worker.resolve_ask(True)
+            self.app._hide_ask()
+
+    def key_n(self) -> None:
+        if self.app.ask_mode and self.app._ask_worker:
+            self.app._ask_worker.resolve_ask(False)
+            self.app._hide_ask()
+
+    def key_e(self) -> None:
+        info = self._current_info()
+        if info:
+            from x_personas.tui.screens.persona_settings import PersonaSettingsScreen
+            self.app.push_screen(PersonaSettingsScreen(info.name))
 
     def key_shift_tab(self) -> None:
         self._prev_persona()

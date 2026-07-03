@@ -25,6 +25,9 @@ class PersonaRuntimeInfo:
     current_scroll: int = 0
     error_message: str = ""
 
+    ask: bool = False
+    headless: bool = True
+
     rate_limits: dict[str, int] = field(default_factory=lambda: {"like": 0, "reply": 0, "repost": 0, "quote": 0})
     rate_limits_max: dict[str, int] = field(default_factory=lambda: {"like": 10, "reply": 5, "repost": 5, "quote": 3})
 

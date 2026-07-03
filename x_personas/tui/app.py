@@ -54,6 +54,8 @@ class XPersonasTUI(App):
         self.compose_mode = False
         self.compose_prompt_mode = False
         self._compose_persona: str = ""
+        self.ask_mode = False
+        self._ask_worker: PersonaWorker | None = None
 
     def on_mount(self) -> None:
         self.title = "X-Personas"
@@ -67,6 +69,7 @@ class XPersonasTUI(App):
             "personas", filter_names=self._filter_personas
         )
         for info in discovered:
+            info.headless = self._headless
             self.store.add_persona(info)
 
         self.push_screen("dashboard")
@@ -126,6 +129,7 @@ class XPersonasTUI(App):
             on_status=lambda s: self._update_persona_status(name, s),
             on_stats=lambda i: self._update_persona_stats(name),
             on_error=lambda e: self._update_persona_error(name, e),
+            on_ask=self._on_worker_ask,
         )
         self._persona_workers[name] = worker
         self.run_worker(worker.run(), group="personas", name=f"persona-{name}")
@@ -282,3 +286,26 @@ class XPersonasTUI(App):
                 return
             except Exception:
                 continue
+
+    # ── Ask (approval) mode ──
+
+    def _on_worker_ask(self, worker: PersonaWorker, description: str) -> None:
+        self.ask_mode = True
+        self._ask_worker = worker
+        self._show_ask_footer()
+
+    def _show_ask_footer(self) -> None:
+        try:
+            footer = self.screen.query_one("#footer")
+            footer.show_ask()
+        except Exception:
+            pass
+
+    def _hide_ask(self) -> None:
+        self.ask_mode = False
+        self._ask_worker = None
+        try:
+            footer = self.screen.query_one("#footer")
+            footer.hide_ask()
+        except Exception:
+            pass
