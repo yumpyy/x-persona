@@ -309,3 +309,50 @@ config = {
     }
 }
 ```
+
+## TUI Mode
+
+The TUI runs as a Textual app (`x_personas/tui/app.py`) launched via `x-personas tui` subcommand or `python -m x_personas.tui`. It shares the same agent core, filesystem state, and log sinks as the headless CLI.
+
+### App Structure
+
+```
+XPersonasTUI(App)
+├── TUIStore              — reactive state (PersonaRuntimeInfo per persona)
+│   ├── personas: dict    — name → PersonaRuntimeInfo
+│   ├── settings          — model, max_daily, quiet, scroll_limit
+│   └── discovery         — scans personas/ dir on startup
+├── Screens
+│   ├── Dashboard         — DataTable (persona list) + rate bars
+│   └── PersonaDetail     — activity table + live log + detail panel
+├── Workers
+│   ├── PersonaWorker     — one per persona, runs agent cycle in background
+│   │   └── command queue — asyncio.Queue for intervene actions
+│   └── StatsWatcher      — periodic filesystem → rate_limits sync
+└── Log Sinks
+    └── agent log() → add_sink(queue) → drain to LogStream widget
+```
+
+### Data Flow
+
+```
+agent log() ──→ sink fn ──→ asyncio.Queue ──→ LogStream.write()
+                                                    ↓
+                                            PersonaDetail._drain_log()
+```
+
+PersonaWorker runs `graph.ainvoke()` in a background thread. Between cycles, it checks the command queue for interventions (force original post, reset scroll). StatsWatcher polls `rate-limits.json` every 2s and updates `PersonaRuntimeInfo` reactively. The TUI reads the same filesystem as headless mode — activity logs, rate limits, persona files.
+
+### Mouse-Resizable Sections
+
+Both splitters (`HeightSplitter`, `WidthSplitter`) follow the same pattern:
+
+1. `on_mouse_down` — record `screen_x`/`screen_y` + current widget size, call `capture_mouse()`
+2. `on_mouse_move` — compute delta from initial position, apply to target widget's `styles.height`/`styles.width`
+3. `on_mouse_up` — call `release_mouse()`
+
+**Critical CSS requirement:** Empty `Static` widgets default to `height: auto` → 0 height → excluded from compositor hit-test (`if region_height:`). Both splitters need explicit `height`/`width` in CSS to be hittable. The `WidthSplitter` starts `display: none` and is toggled to `display: block` when the detail panel opens.
+
+### Inline Compose Mode
+
+Pressing `O` enters compose mode — the footer changes to show `G) Generate  C) Custom  Esc) Cancel`. The `HelpBar` widget toggles between normal and compose mode via `set_compose_mode()`. Generate calls `generate_original_post()` + opens system editor via `app.suspend()`. Custom opens editor directly with empty file. After editor closes, text is validated (≤280 chars) and published via `BrowserSession`.

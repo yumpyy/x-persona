@@ -75,6 +75,25 @@ Persisted `RateLimitState` entries — all recorded actions with timestamps.
 
 ---
 
+## TUI Settings
+
+### `~/.config/x-personas/settings.json`
+
+Persistent TUI settings (model, intervals, quiet mode). Created on first run, synced by `TUIStore`.
+
+```json
+{
+  "model": "deepseek-chat",
+  "max_daily_engagements": 40,
+  "quiet": false,
+  "scroll_limit": 2500
+}
+```
+
+**Git status:** not in repo (user config directory).
+
+---
+
 ## Environment
 
 ### `.env`

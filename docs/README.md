@@ -28,13 +28,13 @@ x-personas/
 │   ├── generate_persona.py           # CLI to generate persona.md from raw source data
 │   │
 │   ├── agent/
-│   │   ├── runner.py                 # CLI entry point, perpetual loop, break logic
+│   │   ├── runner.py                 # CLI entry point (headless + tui subcommand), perpetual loop
 │   │   ├── graph.py                  # LangGraph StateGraph with 10 nodes
 │   │   ├── state.py                  # PersonaState TypedDict (19 fields incl. vlm_config)
 │   │   ├── config.py                 # LLM factory (ChatOpenAI) + VLM config
 │   │   ├── rate_limiter.py           # Per-cycle + hourly/daily caps, persisted
 │   │   ├── history.py                # Load engaged status IDs, recent engagements, original posts
-│   │   ├── log.py                    # log() with [HH:MM:SS] timestamps, set_quiet() toggle
+│   │   ├── log.py                    # log() with [HH:MM:SS] timestamps, pluggable sinks, set_quiet()
 │   │   │
 │   │   └── nodes/
 │   │       ├── load_persona.py       # Parse personas/<name>/persona.md → structured dict
@@ -47,6 +47,36 @@ x-personas/
 │   │       ├── follow_decision.py    # Score follow candidates via 9i criteria
 │   │       ├── state_cleansing.py    # Clear per-cycle state fields
 │   │       └── scroll_page.py        # 5-15s delay, smooth scroll ×3
+│   │
+│   ├── tui/                          # Textual TUI (parallel mode)
+│   │   ├── __main__.py               # Entry: `python -m x_personas.tui`
+│   │   ├── app.py                    # XPersonasTUI(App), screen registry, persona discovery
+│   │   ├── store.py                  # TUIStore — reactive state, settings, filesystem sync
+│   │   │
+│   │   ├── screens/
+│   │   │   ├── dashboard.py          # Persona DataTable, rate bars, status — Tab to enter
+│   │   │   ├── persona_detail.py     # Activity table + log + detail panel — drag-resizable
+│   │   │   ├── intervene.py          # Manual intervene (force post, reset scroll, etc.)
+│   │   │   ├── config_editor.py      # Opens persona.md in system editor ($VISUAL/$EDITOR)
+│   │   │   ├── wizard.py             # New-persona setup wizard
+│   │   │   ├── history_browser.py    # Activity log browser
+│   │   │   ├── settings.py           # Runtime settings (model, intervals, etc.)
+│   │   │   └── help_overlay.py       # Keyboard shortcuts reference
+│   │   │
+│   │   ├── widgets/
+│   │   │   ├── help_bar.py           # Single-line footer with keybinding hints
+│   │   │   ├── log_stream.py         # Queue-draining RichLog (agent → TUI sink)
+│   │   │   ├── error_log.py          # Error-level RichLog widget
+│   │   │   ├── activity_table.py     # Activity log DataTable widget
+│   │   │   ├── height_splitter.py    # Mouse-draggable horizontal bar (resizes above widget)
+│   │   │   └── width_splitter.py     # Mouse-draggable vertical bar (resizes right widget)
+│   │   │
+│   │   ├── workers/
+│   │   │   ├── persona_worker.py     # Runs agent cycle in background, command queue
+│   │   │   └── stats_worker.py       # Periodic rate-limit refresh from filesystem
+│   │   │
+│   │   └── css/
+│   │       └── app.tcss              # Catppuccin Mocha theme, layout, splitter styles
 │   │
 │   ├── models/                       # Pydantic models
 │   │   ├── engagement.py             # ActionType, PendingAction, PostDecision, EngagementDecisions
@@ -87,6 +117,7 @@ x-personas/
 
 ## CLI Usage
 
+### Headless mode (default)
 ```bash
 uv run python -m x_personas.agent.runner --persona <name> [flags]
 ```
@@ -94,6 +125,16 @@ uv run python -m x_personas.agent.runner --persona <name> [flags]
 Or via the installed script:
 ```bash
 uv run x-personas --persona <name> [flags]
+```
+
+### TUI mode
+```bash
+uv run x-personas tui [--persona <name>] [--quiet]
+```
+
+Or via module:
+```bash
+uv run python -m x_personas.tui [--persona <name>]
 ```
 
 ### All Flags
@@ -177,6 +218,59 @@ After `--scroll-limit` pixels (default 2500): 10-30 min break, re-navigate to `x
 | **Custom cursor overlay** | Visual DOM cursor with Bezier easing and click ripple effects (headed mode) |
 | **Auth isolation** | Per-persona auth state files (`personas/<name>/auth.json`) |
 | **20 tests** | All passing |
+
+---
+
+## TUI Mode
+
+The Textual TUI provides a keyboard-driven, htop-like interface for managing multiple personas in parallel. Launched via `x-personas tui` or `python -m x_personas.tui`.
+
+### Architecture
+
+```
+XPersonasTUI (App)
+├── TUIStore          — reactive state, persona discovery, filesystem sync
+├── Dashboard         — persona DataTable + rate bars (Tab to enter detail)
+├── PersonaDetail     — activity table + live log + detail panel
+│   ├── HeightSplitter — mouse-draggable bar resizes activity table height
+│   └── WidthSplitter  — mouse-draggable bar resizes detail panel width
+├── PersonaWorker     — runs agent cycle in background per persona
+│   └── command queue  — force original post, reset scroll, etc.
+├── StatsWatcher      — periodic rate-limit refresh from filesystem
+└── Log sinks         — agent log() → queue → LogStream widget
+```
+
+### Keybindings
+
+| Key | Scope | Action |
+|---|---|---|
+| Tab / Shift+Tab | Detail | Cycle personas |
+| Esc | Detail | Close detail panel / back to dashboard |
+| S | Per-persona | Start / Stop |
+| K | Per-persona | Kill (force stop) |
+| I | Per-persona | Manual intervene |
+| R | Per-persona | Refresh |
+| O | Per-persona | Enter compose mode (inline footer) |
+| G / C / Esc | Compose | Generate / Custom / Cancel |
+| C | Per-persona | Open config in system editor |
+| H | Per-persona | History browser |
+| ? | Global | Help overlay |
+| Q | Global | Quit |
+
+### Mouse Controls
+
+- **Drag HeightSplitter** (between activity table and log) — resize log height
+- **Drag WidthSplitter** (between left panel and detail panel) — resize detail panel width
+- **DataTable rows** — click to select, Enter to open detail panel
+
+### Design Principles
+
+- **No buttons** — all actions via keyboard shortcuts
+- **Shared filesystem** — TUI reads same `activity-log.md`, `rate-limits.json`, `persona.md` as headless mode
+- **Per-persona workers** — each persona runs its own agent cycle in a background task
+- **Command queue** — interventions (force original post, reset scroll) dispatched between LangGraph cycles
+- **Pluggable log sinks** — agent `log()` writes to queue, TUI drains to LogStream widget
+- **Catppuccin Mocha** — hardcoded hex color scheme across CSS and inline Rich markup
 
 ---
 
