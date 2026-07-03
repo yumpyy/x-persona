@@ -234,6 +234,10 @@ class PersonaDetail(Screen):
             from x_personas.tui.screens.persona_settings import PersonaSettingsScreen
             self.app.push_screen(PersonaSettingsScreen(info.name))
 
+    def key_f(self) -> None:
+        from x_personas.tui.screens.settings import SettingsScreen
+        self.app.push_screen(SettingsScreen())
+
     def key_s(self) -> None:
         info = self._current_info()
         if info:

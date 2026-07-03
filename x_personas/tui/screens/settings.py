@@ -1,82 +1,109 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.screen import ModalScreen
-from textual.widgets import Input, Switch, Select, Button, Static, Label
-from textual.containers import Horizontal, Vertical
+from textual.binding import Binding
+from textual.containers import Vertical
+from textual.screen import Screen
+from textual.widgets import Static
 
 
-class SettingsScreen(ModalScreen):
-    """Runtime settings editor."""
+_FIELDS = [
+    ("scroll_limit", "Scroll limit", "int", 100),
+    ("break_min", "Break min (s)", "int", 60),
+    ("break_max", "Break max (s)", "int", 60),
+    ("min_action_delay", "Min action delay (s)", "int", 1),
+    ("max_action_delay", "Max action delay (s)", "int", 1),
+    ("min_scroll_delay", "Min scroll delay (s)", "int", 1),
+    ("max_scroll_delay", "Max scroll delay (s)", "int", 1),
+    ("approval_mode", "Approval mode (ask)", "bool", 0),
+    ("log_verbosity", "Log verbosity", "select", 0),
+]
+
+_VERBOSITY = ("debug", "info", "error")
+
+
+class SettingsScreen(Screen):
+    """Global runtime settings — keyboard-driven, no buttons."""
+
+    BINDINGS = [
+        Binding("up", "cursor_up", "Up"),
+        Binding("down", "cursor_down", "Down"),
+        Binding("space", "toggle", "Toggle/Cycle"),
+        Binding("plus", "increment", "+"),
+        Binding("minus", "decrement", "-"),
+        Binding("enter", "save", "Save"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._cursor = 0
 
     def compose(self) -> ComposeResult:
-        store = self.app.store  # type: ignore
-        s = store.settings
         yield Vertical(
-            Static("[bold]Runtime Settings[/]", classes="settings-title"),
-            Horizontal(
-                Label("Scroll limit:"), Input(str(s.scroll_limit), id="set-scroll-limit"), classes="settings-row"
-            ),
-            Horizontal(
-                Label("Break min (s):"), Input(str(s.break_min), id="set-break-min"), classes="settings-row"
-            ),
-            Horizontal(
-                Label("Break max (s):"), Input(str(s.break_max), id="set-break-max"), classes="settings-row"
-            ),
-            Horizontal(
-                Label("Min action delay (s):"), Input(str(s.min_action_delay), id="set-min-action"), classes="settings-row"
-            ),
-            Horizontal(
-                Label("Max action delay (s):"), Input(str(s.max_action_delay), id="set-max-action"), classes="settings-row"
-            ),
-            Horizontal(
-                Label("Min scroll delay (s):"), Input(str(s.min_scroll_delay), id="set-min-scroll"), classes="settings-row"
-            ),
-            Horizontal(
-                Label("Max scroll delay (s):"), Input(str(s.max_scroll_delay), id="set-max-scroll"), classes="settings-row"
-            ),
-            Horizontal(
-                Label("Approval mode:"),
-                Switch(value=s.approval_mode, id="set-approval"),
-                classes="settings-row",
-            ),
-            Horizontal(
-                Label("Log verbosity:"),
-                Select(
-                    [(v, v) for v in ("debug", "info", "error")],
-                    value=s.log_verbosity,
-                    id="set-verbosity",
-                    allow_blank=False,
-                ),
-                classes="settings-row",
-            ),
-            Horizontal(
-                Button("Save", variant="primary", id="save-settings"),
-                Button("Cancel", variant="default", id="cancel-settings"),
-                classes="settings-buttons",
-            ),
-            id="settings-dialog",
+            Static(id="set-list"),
+            Static("[#6c7086]↑↓: move  Space: toggle/cycle  +/-: adjust  Enter: save  Esc: cancel[/]", id="set-hint"),
         )
+        self._refresh()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "save-settings":
-            self._save()
+    def _render(self) -> str:
+        s = self.app.store.settings
+        lines = ["[#89b4fa bold]Runtime Settings[/]\n"]
+        for i, (key, label, kind, _step) in enumerate(_FIELDS):
+            cursor = "[#89b4fa]→[/]" if i == self._cursor else " "
+            val = getattr(s, key)
+            if kind == "bool":
+                display = "[#a6e3a1][x][/]" if val else "[#6c7086][ ][/]"
+            elif kind == "select":
+                display = val if val in _VERBOSITY else _VERBOSITY[1]
+                display = f"[#f9e2af]{display}[/]"
+            else:
+                display = f"[#cdd6f4]{val}[/]"
+            lines.append(f" {cursor} {display}  {label}")
+        return "\n".join(lines)
+
+    def _refresh(self) -> None:
+        self.query_one("#set-list", Static).update(self._render())
+
+    def _current(self) -> tuple[str, str, int]:
+        return _FIELDS[self._cursor]
+
+    def action_cursor_up(self) -> None:
+        self._cursor = max(0, self._cursor - 1)
+        self._refresh()
+
+    def action_cursor_down(self) -> None:
+        self._cursor = min(len(_FIELDS) - 1, self._cursor + 1)
+        self._refresh()
+
+    def action_toggle(self) -> None:
+        s = self.app.store.settings
+        key, _, kind, _ = self._current()
+        if kind == "bool":
+            setattr(s, key, not getattr(s, key))
+        elif kind == "select":
+            curr = getattr(s, key)
+            idx = _VERBOSITY.index(curr) if curr in _VERBOSITY else 1
+            setattr(s, key, _VERBOSITY[(idx + 1) % len(_VERBOSITY)])
+        self._refresh()
+
+    def action_increment(self) -> None:
+        s = self.app.store.settings
+        key, _, kind, step = self._current()
+        if kind == "int":
+            setattr(s, key, getattr(s, key) + step)
+        self._refresh()
+
+    def action_decrement(self) -> None:
+        s = self.app.store.settings
+        key, _, kind, step = self._current()
+        if kind == "int":
+            setattr(s, key, max(1, getattr(s, key) - step))
+        self._refresh()
+
+    def action_save(self) -> None:
+        self.app.store.save_settings()
         self.app.pop_screen()
 
-    def _save(self) -> None:
-        from x_personas.tui.store import AppSettings
-        s = self.app.store.settings
-        try:
-            s.scroll_limit = int(self.query_one("#set-scroll-limit", Input).value)
-            s.break_min = int(self.query_one("#set-break-min", Input).value)
-            s.break_max = int(self.query_one("#set-break-max", Input).value)
-            s.min_action_delay = int(self.query_one("#set-min-action", Input).value)
-            s.max_action_delay = int(self.query_one("#set-max-action", Input).value)
-            s.min_scroll_delay = int(self.query_one("#set-min-scroll", Input).value)
-            s.max_scroll_delay = int(self.query_one("#set-max-scroll", Input).value)
-            s.approval_mode = self.query_one("#set-approval", Switch).value
-            s.log_verbosity = self.query_one("#set-verbosity", Select).value
-            s._settings_path = self.app.store._settings_path
-            self.app.store.save_settings()
-        except Exception:
-            pass
+    def action_cancel(self) -> None:
+        self.app.pop_screen()

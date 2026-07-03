@@ -134,6 +134,10 @@ class Dashboard(Screen):
             from x_personas.tui.screens.persona_settings import PersonaSettingsScreen
             self.app.push_screen(PersonaSettingsScreen(name))
 
+    def key_f(self) -> None:
+        from x_personas.tui.screens.settings import SettingsScreen
+        self.app.push_screen(SettingsScreen())
+
     def key_g(self) -> None:
         if self.app.compose_mode and not self.app.compose_prompt_mode:
             self.app.show_compose_prompt()
