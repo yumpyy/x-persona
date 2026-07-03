@@ -35,6 +35,7 @@ class MainScreen(Screen):
         self._detail_open = False
         self._activity_data: dict[int, dict] = {}
         self._flags_mode = False
+        self._flags_cursor = 0
 
     # ── Compose ──
 
@@ -42,7 +43,7 @@ class MainScreen(Screen):
         yield Static("X-Personas — Autonomous Persona Agent", id="header")
         with Horizontal(id="root"):
             with Vertical(id="sidebar"):
-                yield Static(id="side-list")
+                yield RichLog(id="side-list", highlight=True, markup=True, wrap=True)
                 yield Static(id="side-stats")
                 yield Static(id="side-rates")
             with Vertical(id="main"):
@@ -85,16 +86,17 @@ class MainScreen(Screen):
     def _render_persona_list(self) -> None:
         store = self.app.store
         names = self._names()
-        lines: list[str] = []
-        for i, name in enumerate(names):
-            info = store.get_persona(name)
-            ic = _icon(info.status)
-            co = _color(info.status)
-            cursor = "[#89b4fa]▸[/]" if i == self._selected_idx else " "
-            lines.append(f"{cursor} [{co}]{ic}[/] [bold]{name}[/]")
-        self.query_one("#side-list", Static).update(
-            "\n".join(lines) if lines else "[#6c7086](no personas)[/]"
-        )
+        log = self.query_one("#side-list", RichLog)
+        log.clear()
+        if not names:
+            log.write("[#6c7086](no personas)[/]")
+        else:
+            for i, name in enumerate(names):
+                info = store.get_persona(name)
+                ic = _icon(info.status)
+                co = _color(info.status)
+                cursor = "[#89b4fa]▸[/]" if i == self._selected_idx else " "
+                log.write(f"{cursor} [{co}]{ic}[/] [bold]{name}[/]")
 
         self.query_one("#side-stats", Static).update(
             f"[#6c7086]active:[/] {store.active_count}/{len(names)}"
@@ -102,7 +104,7 @@ class MainScreen(Screen):
             f"  [#6c7086]total:[/] {store.total_engagements_all}"
         )
 
-        rate_lines: list[str] = [""]
+        rate_lines = [""]
         for action in ("like", "reply", "repost", "quote"):
             used = sum(p.rate_limits.get(action, 0) for p in store.personas.values())
             max_ = sum(p.rate_limits_max.get(action, 10) for p in store.personas.values()) or 1
@@ -115,15 +117,15 @@ class MainScreen(Screen):
         info = self._current_info()
         if not info:
             return
+        log = self.query_one("#side-list", RichLog)
+        log.clear()
+        log.write(f"[#f9e2af bold]Flags — {info.name}[/]\n")
         ask_cur = "[#89b4fa]▸[/]" if self._flags_cursor == 0 else " "
-        vis_cur = "[#89b4fa]▸[/]" if self._flags_cursor == 1 else " "
         ask_checked = "[#a6e3a1][x][/]" if info.ask else "[#6c7086][ ][/]"
+        log.write(f"{ask_cur} {ask_checked}  ask before acting\n")
+        vis_cur = "[#89b4fa]▸[/]" if self._flags_cursor == 1 else " "
         vis_checked = "[#a6e3a1][x][/]" if not info.headless else "[#6c7086][ ][/]"
-        self.query_one("#side-list", Static).update(
-            f"[#f9e2af bold]Flags — {info.name}[/]\n"
-            f"{ask_cur} {ask_checked}  ask before acting\n"
-            f"{vis_cur} {vis_checked}  show browser"
-        )
+        log.write(f"{vis_cur} {vis_checked}  show browser")
         self.query_one("#side-stats", Static).update(
             "[#6c7086]↑↓: pick  space: toggle  esc: done[/]"
         )
@@ -148,7 +150,7 @@ class MainScreen(Screen):
         )
 
         self._refresh_activity(info)
-        self._drain_log()
+        self._reset_log()
 
     def _refresh_activity(self, info) -> None:
         table = self.query_one("#main-activity", DataTable)
@@ -190,11 +192,27 @@ class MainScreen(Screen):
         self._log_timer = self.set_interval(0.3, self._drain_log)
         self._log_initialized = True
 
-    def _drain_log(self) -> None:
+    def _reset_log(self) -> None:
         info = self._current_info()
         if not info:
             return
         log_widget = self.query_one("#main-log", RichLog)
+        log_widget.clear()
+        try:
+            while True:
+                msg = info.log_queue.get_nowait()
+                log_widget.write(msg)
+        except asyncio.QueueEmpty:
+            pass
+
+    def _drain_log(self) -> None:
+        info = self._current_info()
+        if not info:
+            return
+        try:
+            log_widget = self.query_one("#main-log", RichLog)
+        except Exception:
+            return
         try:
             while True:
                 msg = info.log_queue.get_nowait()
@@ -339,9 +357,6 @@ class MainScreen(Screen):
         self._rebuild_sidebar()
 
     def _flags_cursor_down(self) -> None:
-        info = self._current_info()
-        if not info:
-            return
         self._flags_cursor = min(1, self._flags_cursor + 1)
         self._rebuild_sidebar()
 

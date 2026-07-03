@@ -67,8 +67,8 @@ Screen {
 
 /* ===== SIDEBAR ===== */
 #side-list {
+    height: 1fr;
     color: #cdd6f4;
-    padding: 1 0;
 }
 
 #side-stats {
