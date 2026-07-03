@@ -51,6 +51,7 @@ ref-persona.md
 # Persona data directories (each persona is user data — preserve the template dir)
 personas/*/
 !personas/_template/
+personas/tui-settings.json
 
 # Scraped raw profile lists, playbooks & todos
 profiles.md

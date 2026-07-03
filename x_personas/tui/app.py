@@ -13,8 +13,7 @@ from textual import events
 from textual.widgets import Static, Input
 
 from x_personas.tui.store import TUIStore, PersonaRuntimeInfo
-from x_personas.tui.screens.dashboard import Dashboard
-from x_personas.tui.screens.persona_detail import PersonaDetail
+from x_personas.tui.screens.main import MainScreen
 from x_personas.tui.workers.persona_worker import PersonaWorker
 from x_personas.tui.workers.stats_worker import StatsWatcher
 
@@ -35,11 +34,6 @@ class XPersonasTUI(App):
 
     CSS_PATH = "css/app.tcss"
     COLOR = "#89b4fa"
-
-    SCREENS = {
-        "dashboard": Dashboard,
-        "detail": PersonaDetail,
-    }
 
     BINDINGS = [
         Binding("ctrl+p", "command_palette", "Palette"),
@@ -73,7 +67,7 @@ class XPersonasTUI(App):
             info.headless = self._headless
             self.store.add_persona(info)
 
-        self.push_screen("dashboard")
+        self.push_screen(MainScreen())
 
         self._stats_watcher = StatsWatcher(self.store, self._on_stats_update)
         self.run_worker(self._stats_watcher.run(), group="stats", name="stats-watcher")
@@ -84,10 +78,8 @@ class XPersonasTUI(App):
 
     def refresh_all(self) -> None:
         screen = self.screen
-        if hasattr(screen, "refresh_dashboard"):
-            screen.refresh_dashboard()
-        elif hasattr(screen, "refresh_detail"):
-            screen.refresh_detail()
+        if hasattr(screen, "refresh_main"):
+            screen.refresh_main()
 
     def _on_stats_update(self) -> None:
         self.refresh_all()
@@ -296,13 +288,11 @@ class XPersonasTUI(App):
         if not msg:
             return
         screen = self.screen
-        for selector in ("#dash-status", "#detail-header"):
-            try:
-                widget = screen.query_one(selector, Static)
-                widget.update(f"[#f38ba8]{msg}[/]")
-                return
-            except Exception:
-                continue
+        try:
+            widget = screen.query_one("#main-header", Static)
+            widget.update(f"[#f38ba8]{msg}[/]")
+        except Exception:
+            pass
 
     # ── Ask (approval) mode ──
 

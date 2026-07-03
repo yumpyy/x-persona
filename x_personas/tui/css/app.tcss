@@ -31,100 +31,59 @@ Screen {
     color: #cdd6f4;
 }
 
-/* ===== DASHBOARD ===== */
-#dash-status {
-    height: 1;
-    color: #a6adc8;
-    padding: 0 1;
-}
-
-#dash-rates {
-    height: 1;
-    color: #cdd6f4;
-    padding: 0 1;
-}
-
-/* ===== DETAIL VIEW ===== */
-#detail-header {
-    height: 1;
-    color: #cdd6f4;
-    padding: 0 1;
-}
-
-#detail-stats {
-    height: 1;
-    color: #a6adc8;
-    padding: 0 1;
-}
-
-#detail-rates {
-    height: 1;
-    color: #cdd6f4;
-    padding: 0 1;
-}
-
-#detail-container {
+/* ===== ROOT LAYOUT — sidebar + main ===== */
+#root {
     height: 1fr;
 }
 
-#detail-left {
+#sidebar {
+    width: 22;
     height: 100%;
-    width: 1fr;
-}
-
-#detail-right {
-    height: 100%;
-    width: 30;
-    display: none;
     background: #181825;
+    padding: 0 1;
 }
 
-#detail-activity {
+#main {
+    width: 1fr;
+    height: 100%;
+}
+
+/* ===== MAIN AREA ===== */
+#main-header {
+    height: 1;
+    color: #cdd6f4;
+    padding: 0 1;
+}
+
+#main-activity {
     height: 10;
     border: none;
 }
 
-HeightSplitter {
-    height: 1;
-    width: 1fr;
-    background: #313244;
-    color: #45475a;
-}
-
-HeightSplitter:hover {
-    background: #45475a;
-    color: #585b70;
-}
-
-WidthSplitter {
-    width: 1;
-    height: 1fr;
-    display: none;
-    background: #313244;
-    color: #45475a;
-}
-
-WidthSplitter:hover {
-    background: #45475a;
-    color: #585b70;
-}
-
-#detail-log {
+#main-log {
     height: 1fr;
     border: none;
 }
 
-#detail-right-content {
-    height: 1fr;
+/* ===== SIDEBAR ===== */
+#side-list {
     color: #cdd6f4;
-    padding: 0 1;
-    overflow-y: auto;
+    padding: 1 0;
+}
+
+#side-stats {
+    color: #a6adc8;
+    padding: 0;
+}
+
+#side-rates {
+    color: #cdd6f4;
+    padding: 0;
 }
 
 /* ===== DATA TABLES ===== */
 DataTable {
     border: none;
-    height: 1fr;
     color: #cdd6f4;
 }
 
