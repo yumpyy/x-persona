@@ -156,6 +156,11 @@ class MainScreen(Screen):
         table = self.query_one("#main-activity", DataTable)
         table.clear()
         self._activity_data.clear()
+        if not table.columns:
+            table.add_column("Time", width=20)
+            table.add_column("Action", width=14)
+            table.add_column("Target", width=22)
+            table.add_column("Score", width=8)
         path = Path(info.activity_log_file)
         if not path.exists():
             return
