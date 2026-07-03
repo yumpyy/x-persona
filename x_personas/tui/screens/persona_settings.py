@@ -33,21 +33,21 @@ class PersonaSettingsScreen(Screen):
     def compose(self) -> ComposeResult:
         info = self.app.store.get_persona(self._persona_name)
         self._values = {"ask": info.ask, "visible": not info.headless}
-        yield Vertical(
-            Static(self._render(), id="ps-list"),
-            Static("[#6c7086]↑↓: move  Space: toggle  Enter: save  Esc: cancel[/]", id="ps-hint"),
-        )
+        with Vertical():
+            yield Static(f"[#89b4fa bold]Persona Settings — {self._persona_name}[/]", id="ps-title")
+            yield Static(self._item_line(0), id="ps-item-0")
+            yield Static(self._item_line(1), id="ps-item-1")
+            yield Static("[#6c7086]↑↓: move  Space: toggle  Enter: save  Esc: cancel[/]", id="ps-hint")
 
-    def _render(self) -> str:
-        lines = [f"[#89b4fa bold]Persona Settings — {self._persona_name}[/]\n"]
-        for i, (key, label) in enumerate(_ITEMS):
-            cursor = "[#89b4fa]→[/]" if i == self._cursor else " "
-            checked = "[#a6e3a1][x][/]" if self._values[key] else "[#6c7086][ ][/]"
-            lines.append(f" {cursor} {checked}  {label}")
-        return "\n".join(lines)
+    def _item_line(self, idx: int) -> str:
+        key, label = _ITEMS[idx]
+        cursor = "[#89b4fa]→[/]" if idx == self._cursor else " "
+        checked = "[#a6e3a1][x][/]" if self._values[key] else "[#6c7086][ ][/]"
+        return f" {cursor} {checked}  {label}"
 
     def _refresh(self) -> None:
-        self.query_one("#ps-list", Static).update(self._render())
+        self.query_one("#ps-item-0", Static).update(self._item_line(0))
+        self.query_one("#ps-item-1", Static).update(self._item_line(1))
 
     def action_cursor_up(self) -> None:
         self._cursor = max(0, self._cursor - 1)

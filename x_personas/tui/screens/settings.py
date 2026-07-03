@@ -40,30 +40,29 @@ class SettingsScreen(Screen):
         self._cursor = 0
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static(id="set-list"),
-            Static("[#6c7086]↑↓: move  Space: toggle/cycle  +/-: adjust  Enter: save  Esc: cancel[/]", id="set-hint"),
-        )
-        self._refresh()
+        with Vertical():
+            yield Static("[#89b4fa bold]Runtime Settings[/]", id="set-title")
+            for i in range(len(_FIELDS)):
+                yield Static(self._item_line(i), id=f"set-item-{i}")
+            yield Static("[#6c7086]↑↓: move  Space: toggle/cycle  +/-: adjust  Enter: save  Esc: cancel[/]", id="set-hint")
 
-    def _render(self) -> str:
+    def _item_line(self, idx: int) -> str:
         s = self.app.store.settings
-        lines = ["[#89b4fa bold]Runtime Settings[/]\n"]
-        for i, (key, label, kind, _step) in enumerate(_FIELDS):
-            cursor = "[#89b4fa]→[/]" if i == self._cursor else " "
-            val = getattr(s, key)
-            if kind == "bool":
-                display = "[#a6e3a1][x][/]" if val else "[#6c7086][ ][/]"
-            elif kind == "select":
-                display = val if val in _VERBOSITY else _VERBOSITY[1]
-                display = f"[#f9e2af]{display}[/]"
-            else:
-                display = f"[#cdd6f4]{val}[/]"
-            lines.append(f" {cursor} {display}  {label}")
-        return "\n".join(lines)
+        key, label, kind, _step = _FIELDS[idx]
+        cursor = "[#89b4fa]→[/]" if idx == self._cursor else " "
+        val = getattr(s, key)
+        if kind == "bool":
+            display = "[#a6e3a1][x][/]" if val else "[#6c7086][ ][/]"
+        elif kind == "select":
+            display = val if val in _VERBOSITY else _VERBOSITY[1]
+            display = f"[#f9e2af]{display}[/]"
+        else:
+            display = f"[#cdd6f4]{val}[/]"
+        return f" {cursor} {display}  {label}"
 
     def _refresh(self) -> None:
-        self.query_one("#set-list", Static).update(self._render())
+        for i in range(len(_FIELDS)):
+            self.query_one(f"#set-item-{i}", Static).update(self._item_line(i))
 
     def _current(self) -> tuple[str, str, int]:
         return _FIELDS[self._cursor]
