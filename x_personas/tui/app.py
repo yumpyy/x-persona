@@ -78,6 +78,7 @@ class XPersonasTUI(App):
     def _shutdown_workers(self) -> None:
         if self._stats_watcher:
             self._stats_watcher.stop()
+        self.store.save_stats_cache()
         for name in list(self._persona_workers.keys()):
             worker = self._persona_workers[name]
             worker.stop()

@@ -15,6 +15,7 @@ class PersonaRuntimeInfo:
     persona_path: Path
     activity_log_file: str
     rate_limit_file: str
+    stats_cache_file: str = ""
 
     status: str = "stopped"
     cycle_count: int = 0
@@ -103,6 +104,12 @@ class TUIStore:
     def engagements_today_all(self) -> int:
         return sum(p.engagements_today for p in self.personas.values())
 
+    def save_stats_cache(self) -> None:
+        today = datetime.now(timezone.utc).date().isoformat()
+        for info in self.personas.values():
+            cache_path = Path(info.stats_cache_file) if info.stats_cache_file else None
+            _write_cache(cache_path, info, today)
+
     def load_settings(self, path: str | Path) -> None:
         self._settings_path = Path(path)
         if self._settings_path.exists():
@@ -136,21 +143,81 @@ class TUIStore:
                 persona_path=md,
                 activity_log_file=str(entry / "activity-log.md"),
                 rate_limit_file=str(entry / "rate-limits.json"),
+                stats_cache_file=str(entry / "stats-cache.json"),
             )
             (entry / "activity-log.md").touch(exist_ok=True)
-            _load_stats_from_log(info)
+            _load_stats(info)
             _load_rate_limits(info)
             found.append(info)
         return found
 
 
-def _load_stats_from_log(info: PersonaRuntimeInfo) -> None:
+def _load_stats(info: PersonaRuntimeInfo) -> None:
+    today = datetime.now(timezone.utc).date().isoformat()
+    cache_path = Path(info.stats_cache_file) if info.stats_cache_file else None
+    cache = _read_cache(cache_path)
+
+    if cache and cache.get("today_date") == today:
+        info.total_engagements = cache.get("total_engagements", 0)
+        info.engagements_today = cache.get("engagements_today", 0)
+        info.last_action = cache.get("last_action", "")
+        info.last_action_time = cache.get("last_action_time", "")
+        return
+
+    if cache:
+        base_total = cache.get("total_engagements", 0)
+        info.total_engagements = base_total
+        info.last_action = cache.get("last_action", "")
+        info.last_action_time = cache.get("last_action_time", "")
+        today_count = _scan_today_entries(info.activity_log_file, today)
+        info.engagements_today = today_count
+    else:
+        _full_scan(info)
+        today_count = _scan_today_entries(info.activity_log_file, today)
+        info.engagements_today = today_count
+
+    _write_cache(cache_path, info, today)
+
+
+def _read_cache(path: Path | None) -> dict | None:
+    if path is None or not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, Exception):
+        return None
+
+
+def _write_cache(path: Path | None, info: PersonaRuntimeInfo, today: str) -> None:
+    if path is None:
+        return
+    data = {
+        "total_engagements": info.total_engagements,
+        "engagements_today": info.engagements_today,
+        "today_date": today,
+        "last_action": info.last_action,
+        "last_action_time": info.last_action_time,
+    }
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _scan_today_entries(log_file: str, today: str) -> int:
+    path = Path(log_file)
+    if not path.exists():
+        return 0
+    count = 0
+    for line in path.read_text(encoding="utf-8").split("\n"):
+        line = line.strip()
+        if line.startswith(f"| {today}"):
+            count += 1
+    return count
+
+
+def _full_scan(info: PersonaRuntimeInfo) -> None:
     path = Path(info.activity_log_file)
     if not path.exists():
         return
-    today = datetime.now(timezone.utc).date()
     total = 0
-    today_count = 0
     last_action = ""
     last_time = ""
     for line in path.read_text(encoding="utf-8").strip().split("\n"):
@@ -161,19 +228,9 @@ def _load_stats_from_log(info: PersonaRuntimeInfo) -> None:
         if len(parts) < 6:
             continue
         total += 1
-        ts_str = parts[1]
-        action = parts[2]
-        target = parts[3]
-        try:
-            ts = datetime.fromisoformat(ts_str)
-            if ts.date() == today:
-                today_count += 1
-        except (ValueError, TypeError):
-            pass
-        last_action = f"{action} {target}"
-        last_time = ts_str
+        last_action = f"{parts[2]} {parts[3]}"
+        last_time = parts[1]
     info.total_engagements = total
-    info.engagements_today = today_count
     info.last_action = last_action
     info.last_action_time = last_time
 
