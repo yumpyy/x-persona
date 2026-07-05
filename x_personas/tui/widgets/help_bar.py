@@ -30,6 +30,12 @@ _ASK_DECIDE = (
     "[#6c7086]esc:[/]cancel"
 )
 
+_QUIT_CONFIRM = (
+    "[#f38ba8 bold]QUIT?[/]  "
+    "[#f38ba8]y:[/]stop all & exit  "
+    "[#6c7086]n:[/]cancel"
+)
+
 
 class HelpBar(Static):
     """Single-line footer — toggles between normal, compose, prompt, and ask mode."""
@@ -56,6 +62,17 @@ class HelpBar(Static):
     def hide_ask(self) -> None:
         self._ask_mode = False
         if self._compose_mode:
+            self.update(_COMPOSE)
+        else:
+            self.update(_FOOTER)
+
+    def show_quit_confirm(self) -> None:
+        self.update(_QUIT_CONFIRM)
+
+    def hide_quit_confirm(self) -> None:
+        if self._ask_mode:
+            self.update(_ASK_DECIDE)
+        elif self._compose_mode:
             self.update(_COMPOSE)
         else:
             self.update(_FOOTER)
