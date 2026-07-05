@@ -7,9 +7,10 @@ from textual.widgets import Static
 class WidthSplitter(Static):
     """A vertical divider that resizes the widget to its right via dragging."""
 
-    def __init__(self, target_widget, min_width: int = 15, max_width: int = 60):
+    def __init__(self, target_id: str = "", min_width: int = 15, max_width: int = 60):
         super().__init__()
-        self.target_widget = target_widget
+        self._target_id = target_id
+        self.target_widget = None
         self.min_width = min_width
         self.max_width = max_width
         self.dragging = False
@@ -19,6 +20,11 @@ class WidthSplitter(Static):
     def on_mount(self) -> None:
         self.can_focus = False
         self.can_focus_children = False
+        if self._target_id and self.parent:
+            try:
+                self.target_widget = self.parent.query_one(f"#{self._target_id}")
+            except Exception:
+                pass
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 1 and self.target_widget is not None:

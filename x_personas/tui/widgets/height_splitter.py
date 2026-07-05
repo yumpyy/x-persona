@@ -7,9 +7,10 @@ from textual.widgets import Static
 class HeightSplitter(Static):
     """A horizontal divider that resizes the widget above it via dragging."""
 
-    def __init__(self, target_widget, min_height: int = 3, max_height: int = 30):
+    def __init__(self, target_id: str = "", min_height: int = 3, max_height: int = 30):
         super().__init__()
-        self.target_widget = target_widget
+        self._target_id = target_id
+        self.target_widget = None
         self.min_height = min_height
         self.max_height = max_height
         self.dragging = False
@@ -19,9 +20,14 @@ class HeightSplitter(Static):
     def on_mount(self) -> None:
         self.can_focus = False
         self.can_focus_children = False
+        if self._target_id and self.parent:
+            try:
+                self.target_widget = self.parent.query_one(f"#{self._target_id}")
+            except Exception:
+                pass
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
-        if event.button == 1:
+        if event.button == 1 and self.target_widget is not None:
             self.dragging = True
             self.capture_mouse()
             self.initial_mouse_y = event.screen_y
