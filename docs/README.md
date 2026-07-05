@@ -16,6 +16,7 @@ x-personas/
 │       ├── activity-log.md           # Markdown table of all engagements (dedup source)
 │       ├── auth.json                 # Browser auth session state (gitignored)
 │       ├── rate-limits.json          # Persisted rate limit counters (gitignored)
+│       ├── stats-cache.json          # Cached stats for fast startup (gitignored)
 │       └── source/                   # Writing samples and custom files
 │
 ├── pyproject.toml                    # Dependencies (playwright, langgraph, pydantic, etc.)
@@ -50,8 +51,8 @@ x-personas/
 │   │
 │   ├── tui/                          # Textual TUI (parallel mode)
 │   │   ├── __main__.py               # Entry: `python -m x_personas.tui`
-│   │   ├── app.py                    # XPersonasTUI(App), screen registry, persona discovery
-│   │   ├── store.py                  # TUIStore — reactive state, settings, filesystem sync
+│   │   ├── app.py                    # XPersonasTUI(App), persona lifecycle, graceful shutdown
+│   │   ├── store.py                  # TUIStore — reactive state, settings, filesystem sync, stats cache
 │   │   │
 │   │   ├── screens/
 │   │   │   ├── dashboard.py          # Persona DataTable, rate bars, status — Tab to enter
@@ -229,11 +230,13 @@ The Textual TUI provides a keyboard-driven, htop-like interface for managing mul
 
 ```
 XPersonasTUI (App)
-├── TUIStore          — reactive state, persona discovery, filesystem sync
-├── Dashboard         — persona DataTable + rate bars (Tab to enter detail)
-├── PersonaDetail     — activity table + live log + detail panel
-│   ├── HeightSplitter — mouse-draggable bar resizes activity table height
-│   └── WidthSplitter  — mouse-draggable bar resizes detail panel width
+├── TUIStore          — reactive state, persona discovery, filesystem sync, stats cache
+├── MainScreen        — single-screen layout: sidebar + main area
+│   ├── Sidebar       — persona list (RichLog) + stats + rate bars
+│   │   └── WidthSplitter — mouse-draggable bar resizes sidebar width
+│   ├── Activity      — DataTable with Time/Action/Target/Score columns
+│   │   └── HeightSplitter — mouse-draggable bar resizes activity table height
+│   └── Log           — RichLog for live agent output
 ├── PersonaWorker     — runs agent cycle in background per persona
 │   └── command queue  — force original post, reset scroll, etc.
 ├── StatsWatcher      — periodic rate-limit refresh from filesystem
@@ -244,32 +247,44 @@ XPersonasTUI (App)
 
 | Key | Scope | Action |
 |---|---|---|
-| Tab / Shift+Tab | Detail | Cycle personas |
-| Esc | Detail | Close detail panel / back to dashboard |
-| S | Per-persona | Start / Stop |
-| K | Per-persona | Kill (force stop) |
-| I | Per-persona | Manual intervene |
-| R | Per-persona | Refresh |
-| O | Per-persona | Enter compose mode (inline footer) |
+| Up/Down | Sidebar | Navigate persona list |
+| Enter | Sidebar | Focus activity table (up/down navigates rows) |
+| Up/Down | Activity | Navigate activity rows |
+| Enter | Activity | Open detail panel for selected row |
+| Esc | Activity | Return focus to sidebar |
+| Esc | Global | Cancel quit confirmation / flags mode / compose mode |
+| S | Global | Start / Stop selected persona |
+| K | Global | Kill (force stop) selected persona |
+| I | Global | Manual intervene |
+| R | Global | Refresh sidebar + activity |
+| O | Global | Enter compose mode (inline footer) |
 | G / C / Esc | Compose | Generate / Custom / Cancel |
-| C | Per-persona | Open config in system editor |
-| H | Per-persona | History browser |
+| C | Global | Open config in system editor |
+| H | Global | History browser |
+| E | Global | Toggle flags mode (ask, visible) |
+| F | Global | Settings |
 | ? | Global | Help overlay |
-| Q | Global | Quit |
+| Q | Global | Quit (confirms if personas are running) |
 
 ### Mouse Controls
 
-- **Drag HeightSplitter** (between activity table and log) — resize log height
-- **Drag WidthSplitter** (between left panel and detail panel) — resize detail panel width
+- **Drag WidthSplitter** (between sidebar and main) — resize sidebar width (15-50 chars)
+- **Drag HeightSplitter** (between activity table and log) — resize activity table height (3-30 rows)
 - **DataTable rows** — click to select, Enter to open detail panel
+- **Focus highlight** — active section gets a blue border (`#89b4fa`)
 
 ### Design Principles
 
 - **No buttons** — all actions via keyboard shortcuts
+- **Single-screen layout** — sidebar + main area, no tab switching
+- **Focus modes** — up/down navigates sidebar personas; Enter switches to activity table; Esc returns
 - **Shared filesystem** — TUI reads same `activity-log.md`, `rate-limits.json`, `persona.md` as headless mode
 - **Per-persona workers** — each persona runs its own agent cycle in a background task
 - **Command queue** — interventions (force original post, reset scroll) dispatched between LangGraph cycles
 - **Pluggable log sinks** — agent `log()` writes to queue, TUI drains to LogStream widget
+- **Log persistence** — per-persona log buffers survive across persona switches
+- **Stats cache** — `stats-cache.json` avoids re-parsing activity logs on startup
+- **Graceful shutdown** — quit confirmation when personas are running, workers cleaned up before exit
 - **Catppuccin Mocha** — hardcoded hex color scheme across CSS and inline Rich markup
 
 ---
@@ -311,6 +326,7 @@ A blank 14-section template lives at `personas/_template/persona.md` (also at `p
 | `personas/<name>/activity-log.md` | Markdown table of all engagements (dedup source) | ignored |
 | `personas/<name>/auth.json` | Browser auth session state | ignored |
 | `personas/<name>/rate-limits.json` | Persisted rate limit counters | ignored |
+| `personas/<name>/stats-cache.json` | Cached stats (total, today, last action) for fast startup | ignored |
 | `personas/<name>/source/` | Writing samples and custom files | ignored |
 | `personas/_template/persona.md` | Blank 14-section template | tracked |
 | `.env` | API keys and model config | ignored |
