@@ -37,10 +37,18 @@ Screen {
 }
 
 #sidebar {
-    width: 22;
+    width: 30;
     height: 100%;
     background: #181825;
     padding: 0 1;
+}
+
+#sidebar.highlighted {
+    border: solid #89b4fa;
+}
+
+#main-activity.highlighted {
+    border: solid #89b4fa;
 }
 
 #main {
@@ -101,6 +109,40 @@ DataTable > .datatable--cursor {
 RichLog {
     border: none;
     color: #cdd6f4;
+}
+
+/* ===== SCROLLBARS ===== */
+Scrollbar {
+    background: #181825;
+    color: #313244;
+}
+
+Scrollbar > .scrollbar--thumb {
+    background: #45475a;
+    min-height: 1;
+}
+
+Scrollbar > .scrollbar--thumb:hover {
+    background: #585b70;
+}
+
+Scrollbar.vertical {
+    width: 1;
+}
+
+Scrollbar.horizontal {
+    height: 1;
+}
+
+/* ===== SPLITTERS (drag handles) ===== */
+WidthSplitter {
+    width: 1;
+    background: #313244;
+}
+
+HeightSplitter {
+    height: 1;
+    background: #313244;
 }
 
 /* ===== MODAL SCREENS ===== */
