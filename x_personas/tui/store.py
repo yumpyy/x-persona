@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from textual.reactive import var
@@ -135,7 +137,57 @@ class TUIStore:
                 activity_log_file=str(entry / "activity-log.md"),
                 rate_limit_file=str(entry / "rate-limits.json"),
             )
-            # create activity log if missing
             (entry / "activity-log.md").touch(exist_ok=True)
+            _load_stats_from_log(info)
+            _load_rate_limits(info)
             found.append(info)
         return found
+
+
+def _load_stats_from_log(info: PersonaRuntimeInfo) -> None:
+    path = Path(info.activity_log_file)
+    if not path.exists():
+        return
+    today = datetime.now(timezone.utc).date()
+    total = 0
+    today_count = 0
+    last_action = ""
+    last_time = ""
+    for line in path.read_text(encoding="utf-8").strip().split("\n"):
+        line = line.strip()
+        if not line or not line.startswith("|") or "timestamp" in line or "---" in line:
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 6:
+            continue
+        total += 1
+        ts_str = parts[1]
+        action = parts[2]
+        target = parts[3]
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            if ts.date() == today:
+                today_count += 1
+        except (ValueError, TypeError):
+            pass
+        last_action = f"{action} {target}"
+        last_time = ts_str
+    info.total_engagements = total
+    info.engagements_today = today_count
+    info.last_action = last_action
+    info.last_action_time = last_time
+
+
+def _load_rate_limits(info: PersonaRuntimeInfo) -> None:
+    path = Path(info.rate_limit_file)
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data.get("entries", [])
+        for entry in entries:
+            action = entry.get("action", "")
+            if action in info.rate_limits:
+                info.rate_limits[action] += 1
+    except (json.JSONDecodeError, Exception):
+        pass
