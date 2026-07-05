@@ -9,6 +9,8 @@ from textual.screen import Screen
 from textual.widgets import DataTable, RichLog, Static
 
 from x_personas.tui.widgets.help_bar import HelpBar
+from x_personas.tui.widgets.width_splitter import WidthSplitter
+from x_personas.tui.widgets.height_splitter import HeightSplitter
 
 
 def _icon(status: str) -> str:
@@ -36,6 +38,10 @@ class MainScreen(Screen):
         self._activity_data: dict[int, dict] = {}
         self._flags_mode = False
         self._flags_cursor = 0
+        self._focus_mode = "sidebar"
+        self._suppress_row_selected = False
+        self._log_buffers: dict[str, list[str]] = {}
+        self._quit_confirm = False
 
     # ── Compose ──
 
@@ -46,21 +52,24 @@ class MainScreen(Screen):
                 yield RichLog(id="side-list", highlight=True, markup=True, wrap=True)
                 yield Static(id="side-stats")
                 yield Static(id="side-rates")
+            yield WidthSplitter(target_id="sidebar", min_width=15, max_width=50)
             with Vertical(id="main"):
                 yield Static(id="main-header")
                 yield DataTable(id="main-activity", cursor_type="row")
+                yield HeightSplitter(target_id="main-activity", min_height=3, max_height=30)
                 yield RichLog(id="main-log", highlight=True, markup=True)
         yield HelpBar()
 
     def on_mount(self) -> None:
         self._init_log()
-        self._rebuild_sidebar()
-        self._show_persona()
         activity = self.query_one("#main-activity", DataTable)
         activity.add_column("Time", width=20)
         activity.add_column("Action", width=14)
         activity.add_column("Target", width=22)
         activity.add_column("Score", width=8)
+        self._rebuild_sidebar()
+        self._show_persona()
+        self._update_focus_highlight()
 
     # ── Sidebar ──
 
@@ -156,11 +165,6 @@ class MainScreen(Screen):
         table = self.query_one("#main-activity", DataTable)
         table.clear()
         self._activity_data.clear()
-        if not table.columns:
-            table.add_column("Time", width=20)
-            table.add_column("Action", width=14)
-            table.add_column("Target", width=22)
-            table.add_column("Score", width=8)
         path = Path(info.activity_log_file)
         if not path.exists():
             return
@@ -188,10 +192,14 @@ class MainScreen(Screen):
             return
         log_widget = self.query_one("#main-log", RichLog)
         log_widget.clear()
+        name = self._selected_name() or ""
+        for msg in self._log_buffers.get(name, []):
+            log_widget.write(msg)
         try:
             while True:
                 msg = info.log_queue.get_nowait()
                 log_widget.write(msg)
+                self._log_buffers.setdefault(name, []).append(msg)
         except asyncio.QueueEmpty:
             pass
         self._log_timer = self.set_interval(0.3, self._drain_log)
@@ -201,12 +209,16 @@ class MainScreen(Screen):
         info = self._current_info()
         if not info:
             return
+        name = self._selected_name() or ""
         log_widget = self.query_one("#main-log", RichLog)
         log_widget.clear()
+        for msg in self._log_buffers.get(name, []):
+            log_widget.write(msg)
         try:
             while True:
                 msg = info.log_queue.get_nowait()
                 log_widget.write(msg)
+                self._log_buffers.setdefault(name, []).append(msg)
         except asyncio.QueueEmpty:
             pass
 
@@ -218,10 +230,12 @@ class MainScreen(Screen):
             log_widget = self.query_one("#main-log", RichLog)
         except Exception:
             return
+        name = self._selected_name() or ""
         try:
             while True:
                 msg = info.log_queue.get_nowait()
                 log_widget.write(msg)
+                self._log_buffers.setdefault(name, []).append(msg)
         except asyncio.QueueEmpty:
             pass
         log_widget.scroll_end(animate=False)
@@ -244,6 +258,16 @@ class MainScreen(Screen):
         self._rebuild_sidebar()
         self._show_persona()
 
+    def _update_focus_highlight(self) -> None:
+        sidebar = self.query_one("#sidebar")
+        activity = self.query_one("#main-activity")
+        if self._focus_mode == "sidebar":
+            sidebar.add_class("highlighted")
+            activity.remove_class("highlighted")
+        else:
+            sidebar.remove_class("highlighted")
+            activity.add_class("highlighted")
+
     def refresh_main(self) -> None:
         self._rebuild_sidebar()
         self._show_persona()
@@ -253,19 +277,23 @@ class MainScreen(Screen):
     def key_up(self) -> None:
         if self._flags_mode:
             self._flags_cursor_up()
-        else:
+        elif self._focus_mode == "sidebar":
             self._prev()
 
     def key_down(self) -> None:
         if self._flags_mode:
             self._flags_cursor_down()
-        else:
+        elif self._focus_mode == "sidebar":
             self._next()
 
     def key_enter(self) -> None:
-        name = self._selected_name()
-        if name:
-            self.app.handle_start_stop(name)
+        if self._flags_mode:
+            self._flags_toggle()
+        elif self._focus_mode == "sidebar":
+            self._focus_mode = "activity"
+            self._suppress_row_selected = True
+            self.query_one("#main-activity").focus()
+            self._update_focus_highlight()
 
     def key_s(self) -> None:
         name = self._selected_name()
@@ -326,7 +354,16 @@ class MainScreen(Screen):
             self._rebuild_sidebar()
 
     def key_escape(self) -> None:
-        if self._flags_mode:
+        if self._quit_confirm:
+            self._quit_confirm = False
+            try:
+                self.app.screen.query_one("#footer").hide_quit_confirm()
+            except Exception:
+                pass
+        elif self._focus_mode == "activity":
+            self._focus_mode = "sidebar"
+            self._update_focus_highlight()
+        elif self._flags_mode:
             self._flags_mode = False
             self._rebuild_sidebar()
         elif self.app.compose_prompt_mode:
@@ -340,9 +377,44 @@ class MainScreen(Screen):
         self.app.push_screen(HelpOverlay())
 
     def key_q(self) -> None:
+        if self._quit_confirm:
+            return
+        if self.app.store.active_count > 0:
+            self._quit_confirm = True
+            try:
+                self.app.screen.query_one("#footer").show_quit_confirm()
+            except Exception:
+                pass
+        else:
+            self.app.exit()
+
+    def key_y(self) -> None:
+        if self._quit_confirm:
+            self._quit_confirm = False
+            try:
+                self.app.screen.query_one("#footer").hide_quit_confirm()
+            except Exception:
+                pass
+            self.run_worker(self._quit_and_exit())
+
+    async def _quit_and_exit(self) -> None:
+        self.app.stop_all()
+        import asyncio
+        await asyncio.sleep(0.5)
         self.app.exit()
 
+    def key_n(self) -> None:
+        if self._quit_confirm:
+            self._quit_confirm = False
+            try:
+                self.app.screen.query_one("#footer").hide_quit_confirm()
+            except Exception:
+                pass
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if self._suppress_row_selected:
+            self._suppress_row_selected = False
+            return
         idx = event.cursor_row
         data = self._activity_data.get(idx)
         if data:
