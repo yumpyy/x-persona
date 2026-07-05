@@ -73,8 +73,17 @@ class XPersonasTUI(App):
         self.run_worker(self._stats_watcher.run(), group="stats", name="stats-watcher")
 
     def on_unmount(self) -> None:
+        self._shutdown_workers()
+
+    def _shutdown_workers(self) -> None:
         if self._stats_watcher:
             self._stats_watcher.stop()
+        for name in list(self._persona_workers.keys()):
+            worker = self._persona_workers[name]
+            worker.stop()
+        self._persona_workers.clear()
+        for w in list(self.workers):
+            w.cancel()
 
     def refresh_all(self) -> None:
         screen = self.screen
@@ -129,8 +138,10 @@ class XPersonasTUI(App):
 
     def start_persona(self, name: str) -> None:
         info = self.store.get_persona(name)
-        if not info or info.status == "running":
+        if not info or info.status in ("running", "starting"):
             return
+        info.status = "starting"
+        self.refresh_all()
 
         worker = PersonaWorker(
             persona_info=info,
@@ -165,6 +176,9 @@ class XPersonasTUI(App):
     def stop_all(self) -> None:
         for name in list(self._persona_workers.keys()):
             self.stop_persona(name, force=True)
+        for w in list(self.workers):
+            if w.name.startswith("persona-") or w.name == "stats-watcher":
+                w.cancel()
 
     # ── Compose mode ──
 
