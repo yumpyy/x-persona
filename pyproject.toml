@@ -1,7 +1,8 @@
 [project]
-name = "x-personas"
+name = "xpersonas"
 version = "0.1.0"
-description = "X Personas — autonomous social media agent"
+description = "xpersonas: autonomous social media persona platform"
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,20 +12,23 @@ dependencies = [
     "langchain-core>=0.3.0",
     "langchain-openai>=0.3.0",
     "python-dotenv>=1.1.0",
-    "textual>=2.0.0",
+    "pyyaml>=6.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
 ]
 
 [project.scripts]
-x-personas = "x_personas.agent.runner:main"
-x-personas-tui = "x_personas.tui.__main__:main"
-generate-persona = "x_personas.generate_persona:main"
+xpersonas = "xpersonas.cli.main:app"
+xpersonas-api = "xpersonas.api.server:run"
 
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["x_personas", "x_personas.*"]
+include = ["xpersonas", "xpersonas.*"]
 
 [tool.uv]
 package = true
@@ -32,4 +36,3 @@ package = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_test_loop_scope = "function"
-
