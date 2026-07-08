@@ -15,17 +15,54 @@ You define a persona (voice, interests, behavior). The agent scrolls feeds, read
 
 ```mermaid
 graph TB
-    CLI[CLI] --> Runner[Agent Runner]
-    API[REST API] --> Runner
+    subgraph "Entry Points"
+        CLI[CLI<br/>Typer + Rich]
+        API[REST API<br/>FastAPI + Swagger]
+    end
 
-    Runner --> Graph[LangGraph]
-    Graph --> LLM[LLM<br/>OpenAI-compatible]
-    Graph --> Adapter[Platform Adapter]
+    subgraph "Agent Runtime"
+        Runner["AgentRunner<br/>asyncio task pool"]
+        Graph["LangGraph StateGraph<br/>7 strategies, 13 nodes"]
+        State["AgentState<br/>TypedDict"]
 
-    Adapter --> Browser[Playwright<br/>Chromium]
-    Browser --> AntiDet[Anti-detection<br/>Bezier mouse<br/>char-by-char typing<br/>random delays]
+        Runner --> Graph
+        Graph --> State
+    end
 
-    Runner --> DB[(SQLite)]
+    CLI --> Runner
+    API --> Runner
+
+    subgraph "LLM Layer"
+        LLM["OpenAI-compatible API<br/>Pydantic models"]
+    end
+
+    State <-->|decisions + content| LLM
+
+    subgraph "Platform Adapters"
+        Registry["Adapter Registry"]
+        X["XTwitterAdapter<br/>Playwright"]
+        Registry --> X
+    end
+
+    Graph <-->|search, like, reply, quote| Registry
+
+    subgraph "Browser Layer"
+        Browser["Chromium<br/>headless / visible"]
+        AntiDet["Anti-Detection<br/>Bezier mouse motion<br/>char-by-char typing<br/>random delays 50-150ms"]
+        Auth["Auth State<br/>per-persona cookies<br/>session persistence"]
+    end
+
+    X --> Browser
+    Browser --> AntiDet
+    Browser --> Auth
+
+    subgraph "Storage Layer"
+        DB[("SQLite<br/>WAL mode<br/>12 tables")]
+        Repos["8 Repositories<br/>Tenant, Persona, Activity<br/>RateLimit, Product, Contact<br/>Escalation, Run"]
+    end
+
+    Runner --> DB
+    DB --> Repos
 ```
 
 ### How the agent loop works
