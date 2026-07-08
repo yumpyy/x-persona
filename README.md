@@ -16,14 +16,14 @@ You define a persona (voice, interests, behavior). The agent scrolls feeds, read
 ```mermaid
 graph TB
     subgraph "Entry Points"
-        CLI[CLI<br/>Typer + Rich]
-        API[REST API<br/>FastAPI + Swagger]
+        CLI[CLI]
+        API[REST API]
     end
 
     subgraph "Agent Runtime"
-        Runner["AgentRunner<br/>asyncio task pool"]
-        Graph["LangGraph StateGraph<br/>7 strategies, 13 nodes"]
-        State["AgentState<br/>TypedDict"]
+        Runner["Agent Runner"]
+        Graph["LangGraph<br/>strategy-aware graphs"]
+        State["Agent State"]
 
         Runner --> Graph
         Graph --> State
@@ -33,7 +33,7 @@ graph TB
     API --> Runner
 
     subgraph "LLM Layer"
-        LLM["OpenAI-compatible API<br/>Pydantic models"]
+        LLM["OpenAI-compatible API"]
     end
 
     State <-->|decisions + content| LLM
@@ -48,8 +48,8 @@ graph TB
 
     subgraph "Browser Layer"
         Browser["Chromium<br/>headless / visible"]
-        AntiDet["Anti-Detection<br/>Bezier mouse motion<br/>char-by-char typing<br/>random delays 50-150ms"]
-        Auth["Auth State<br/>per-persona cookies<br/>session persistence"]
+        AntiDet["Anti-Detection<br/>Bezier mouse motion<br/>char-by-char typing<br/>random delays"]
+        Auth["Auth State<br/>per-persona cookies"]
     end
 
     X --> Browser
@@ -57,8 +57,8 @@ graph TB
     Browser --> Auth
 
     subgraph "Storage Layer"
-        DB[("SQLite<br/>WAL mode<br/>12 tables")]
-        Repos["8 Repositories<br/>Tenant, Persona, Activity<br/>RateLimit, Product, Contact<br/>Escalation, Run"]
+        DB[(SQLite)]
+        Repos["Repositories"]
     end
 
     Runner --> DB
