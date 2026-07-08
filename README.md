@@ -41,7 +41,13 @@ graph TB
     subgraph "Platform Adapters"
         Registry["Adapter Registry"]
         X["XTwitterAdapter<br/>Playwright"]
+        LI["LinkedIn<br/>coming soon"]
+        RD["Reddit<br/>coming soon"]
+        IG["Instagram<br/>coming soon"]
         Registry --> X
+        Registry -.-> LI
+        Registry -.-> RD
+        Registry -.-> IG
     end
 
     Graph <-->|search, like, reply, quote| Registry
