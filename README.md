@@ -1,10 +1,8 @@
 # xpersonas
 
-Self-hosted platform for running autonomous AI personas on social media.
+Self-hosted platform that runs automated personas on social media.
 
-Define a persona. Agent lives that identity. Scrolling, reading, engaging, posting like a real human.
-
-> **Not** a scheduling tool, analytics dashboard, or chatbot. It's an autonomous agent.
+You define a persona (voice, interests, behavior). The agent scrolls feeds, reads posts, decides what to engage with, writes replies in that persona's voice, and posts them. Runs 24/7.
 
 ---
 
@@ -17,104 +15,46 @@ Define a persona. Agent lives that identity. Scrolling, reading, engaging, posti
 
 ```mermaid
 graph TB
-    subgraph "Entry Points"
-        CLI[CLI<br/>Typer + Rich]
-        API[REST API<br/>FastAPI + Swagger]
-    end
+    CLI[CLI] --> Runner[Agent Runner]
+    API[REST API] --> Runner
 
-    subgraph "Agent Runtime"
-        Runner["AgentRunner<br/>asyncio task pool<br/>semaphore-constrained"]
-        Graph["LangGraph StateGraph<br/>7 strategies, 13 nodes<br/>dynamic topology"]
-        State["AgentState<br/>TypedDict flowing through graph"]
+    Runner --> Graph[LangGraph]
+    Graph --> LLM[LLM<br/>OpenAI-compatible]
+    Graph --> Adapter[Platform Adapter]
 
-        Runner --> Graph
-        Graph --> State
-    end
+    Adapter --> Browser[Playwright<br/>Chromium]
+    Browser --> AntiDet[Anti-detection<br/>Bezier mouse<br/>char-by-char typing<br/>random delays]
 
-    CLI --> Runner
-    API --> Runner
-
-    subgraph "LLM Layer"
-        LLM["OpenAI-compatible API<br/>structured output<br/>Pydantic models"]
-    end
-
-    State <-->|decisions + content| LLM
-
-    subgraph "Platform Adapters"
-        Registry["Adapter Registry<br/>auto-discovery<br/>decorator-based"]
-        X["XTwitterAdapter<br/>Playwright"]
-        Registry --> X
-    end
-
-    Graph <-->|search, like, reply, quote| Registry
-
-    subgraph "Browser Layer"
-        Browser["Chromium<br/>headless / visible<br/>slowmo support"]
-        AntiDet["Anti-Detection<br/>Bezier mouse motion<br/>char-by-char typing<br/>random delays 50-150ms"]
-        Auth["Auth State<br/>per-persona cookies<br/>session persistence"]
-    end
-
-    X --> Browser
-    Browser --> AntiDet
-    Browser --> Auth
-
-    subgraph "Storage Layer"
-        DB[("SQLite<br/>WAL mode<br/>12 tables")]
-        Repos["8 Repositories<br/>Tenant, Persona, Activity<br/>RateLimit, Product, Contact<br/>Escalation, Run"]
-    end
-
-    Runner --> DB
-    DB --> Repos
-
-    subgraph "Anti-Detection"
-        Scroll["Smooth Scroll<br/>behavior: smooth"]
-        Timing["Random Delays<br/>3-8s actions<br/>2-5s cycles"]
-        Breaks["Break Logic<br/>10-30min after ~2500 posts"]
-    end
-
-    AntiDet --> Scroll
-    AntiDet --> Timing
-    AntiDet --> Breaks
+    Runner --> DB[(SQLite)]
 ```
 
-### Agent graph topology
+### How the agent loop works
 
-The graph changes at runtime based on `persona_config.engagement.strategy`. Conditional edges route through different node paths:
+Each cycle, the agent:
 
-```mermaid
-flowchart TB
-    Start([cycle start]) --> LP[load_persona<br/>parse config, resolve strategy]
-    LP --> FC[fetch_content<br/>feed scroll or topic search]
-    FC --> LLM{llm_decide<br/>LLM scores posts<br/>returns EngagementDecisions}
+1. **Loads persona** — parses config, resolves strategy
+2. **Fetches content** — scrolls feed or searches topics
+3. **LLM decides** — scores each post, returns actions (reply, like, quote, repost)
+4. **Hydrates context** — for replies, fetches thread to see what others said
+5. **Generates content** — LLM writes reply/quote in persona's voice
+6. **Executes actions** — Playwright clicks, types, scrolls (with anti-detection)
+7. **Logs** — every action recorded with reasoning and score
+8. **Tracks relationships** — updates contact rapport and stage
+9. **Scrolls** — smooth scroll, increments counter, checks break threshold
 
-    LLM -->|reply / quote| HC[hydrate_context<br/>fetch thread ancestors<br/>check dedup]
-    LLM -->|like / repost| EA[execute_actions<br/>Playwright browser<br/>with anti-detection]
-    LLM -->|promo mention| PE[promo_engage<br/>pain point search<br/>frequency caps]
-    LLM -->|no action| LA[log_activity]
+The graph changes based on strategy. `monitor_and_escalate` skips steps 4-6 entirely. `curation` skips step 4. `support` only does replies.
 
-    HC --> GC[generate_content<br/>LLM writes in persona voice<br/>using writing samples]
-    GC --> EA
-    PE --> GC
+### Strategies
 
-    EA --> LA
-
-    LA --> RT[relationship_track<br/>contact scoring<br/>rapport + stage]
-    RT --> SC[state_cleansing<br/>clear transient state<br/>preserve history]
-    SC --> SP[scroll_page<br/>smooth scroll<br/>increment counter]
-    SP --> END([cycle end / break check])
-```
-
-### Strategy matrix
-
-| Strategy | Nodes | Behavior |
-|----------|-------|----------|
-| `active` | all 13 | Full loop: search, decide, generate, execute, track |
-| `selective` | all 13 | Same topology, higher LLM score threshold |
-| `relationship_building` | all 13 | Fewer actions, more contact tracking |
-| `curation` | 10 | Skip hydrate_context, no reply threads |
-| `support` | 11 | Search-based fetch, reply-only |
-| `monitor_and_escalate` | 6 | Log only, no actions, webhook escalation |
-| `competitive_intel` | 6 | Log only, sentiment tracking |
+| Strategy | What it does |
+|----------|-------------|
+| `active` | Full loop — search, decide, generate, execute, track |
+| `selective` | Same loop, higher score threshold before acting |
+| `relationship_building` | Fewer actions, more contact tracking |
+| `curation` | Quote and original posts, no reply threads |
+| `support` | Reply-only to customer questions |
+| `monitor_and_escalate` | Log everything, no actions, webhook alerts |
+| `competitive_intel` | Log competitor mentions, no actions |
 
 [Full architecture docs](docs/ARCHITECTURE.md)
 
