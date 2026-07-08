@@ -69,15 +69,15 @@ graph TB
 
 Each cycle, the agent:
 
-1. **Loads persona** — parses config, resolves strategy
-2. **Fetches content** — scrolls feed or searches topics
-3. **LLM decides** — scores each post, returns actions (reply, like, quote, repost)
-4. **Hydrates context** — for replies, fetches thread to see what others said
-5. **Generates content** — LLM writes reply/quote in persona's voice
-6. **Executes actions** — Playwright clicks, types, scrolls (with anti-detection)
-7. **Logs** — every action recorded with reasoning and score
-8. **Tracks relationships** — updates contact rapport and stage
-9. **Scrolls** — smooth scroll, increments counter, checks break threshold
+1. **Loads persona**: parses config, resolves strategy
+2. **Fetches content**: scrolls feed or searches topics
+3. **LLM decides**: scores each post, returns actions (reply, like, quote, repost)
+4. **Hydrates context**: for replies, fetches thread to see what others said
+5. **Generates content**: LLM writes reply/quote in persona's voice
+6. **Executes actions**: Playwright clicks, types, scrolls (with anti-detection)
+7. **Logs**: every action recorded with reasoning and score
+8. **Tracks relationships**: updates contact rapport and stage
+9. **Scrolls**: smooth scroll, increments counter, checks break threshold
 
 The graph changes based on strategy. `monitor_and_escalate` skips steps 4-6 entirely. `curation` skips step 4. `support` only does replies.
 
@@ -85,7 +85,7 @@ The graph changes based on strategy. `monitor_and_escalate` skips steps 4-6 enti
 
 | Strategy | What it does |
 |----------|-------------|
-| `active` | Full loop — search, decide, generate, execute, track |
+| `active` | Full loop: search, decide, generate, execute, track |
 | `selective` | Same loop, higher score threshold before acting |
 | `relationship_building` | Fewer actions, more contact tracking |
 | `curation` | Quote and original posts, no reply threads |
